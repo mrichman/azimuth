@@ -2,6 +2,8 @@
 
 A modern, cross-platform note-taking application built with Tauri, React, and TypeScript.
 
+![Azimuth Screenshot](img/screenshot.png)
+
 ## Features
 
 - **Markdown Editor** - Full-featured markdown editing with live preview
