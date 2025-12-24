@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -105,14 +106,63 @@ fn get_file_hash(path: &PathBuf) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+fn get_app_config_path() -> Result<PathBuf, String> {
+    let config_dir = dirs::config_dir()
+        .ok_or("Could not find config directory")?
+        .join("azimuth");
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    }
+    Ok(config_dir.join("config.json"))
+}
+
 #[tauri::command]
 fn get_notes_dir() -> Result<String, String> {
+    // Check for custom path in app config first
+    if let Ok(config_path) = get_app_config_path() {
+        if config_path.exists() {
+            if let Ok(content) = fs::read_to_string(&config_path) {
+                if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(custom_path) = config.get("notes_dir").and_then(|v| v.as_str()) {
+                        let path = PathBuf::from(custom_path);
+                        if !path.exists() {
+                            fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+                        }
+                        return Ok(path.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+    
+    // Default fallback to ~/Azimuth
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let notes_dir = home.join("Azimuth");
     if !notes_dir.exists() {
         fs::create_dir_all(&notes_dir).map_err(|e| e.to_string())?;
     }
     Ok(notes_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn set_notes_dir(path: String) -> Result<(), String> {
+    let config_path = get_app_config_path()?;
+    
+    // Read existing config or create new one
+    let mut config: serde_json::Value = if config_path.exists() {
+        let content = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    
+    // Update notes_dir
+    config["notes_dir"] = serde_json::Value::String(path);
+    
+    // Write back
+    let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::write(&config_path, json).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // App Settings
@@ -262,31 +312,126 @@ fn search_notes(base_path: String, query: String) -> Result<Vec<SearchResult>, S
     Ok(results)
 }
 
+// Directories to skip when scanning for notebooks
+const IGNORED_DIRS: &[&str] = &[
+    ".", "..", ".git", ".svn", ".hg", "node_modules", "target", "build", "dist",
+    ".Trash", ".Spotlight-V100", ".fseventsd", "Library", "Applications",
+    ".cache", ".npm", ".cargo", ".rustup", ".local", ".config",
+    "__pycache__", ".venv", "venv", ".tox", ".pytest_cache",
+    ".DS_Store", "Thumbs.db",
+];
+
+#[derive(Clone, Serialize)]
+struct LoadComplete {
+    notebooks: Vec<Notebook>,
+}
+
+const MAX_NOTEBOOKS: usize = 50;
+const MAX_ENTRIES_TO_SCAN: usize = 200;
+
+// Trigger async notebook loading - results come via events
+#[tauri::command]
+fn list_notebooks_async(app: AppHandle, base_path: String) {
+    std::thread::spawn(move || {
+        let path = PathBuf::from(&base_path);
+        if !path.exists() {
+            let _ = fs::create_dir_all(&path);
+        }
+        
+        let mut notebooks = Vec::new();
+        let mut scanned = 0;
+        
+        if let Ok(read_dir) = std::fs::read_dir(&path) {
+            for entry in read_dir.filter_map(|e| e.ok()) {
+                scanned += 1;
+                
+                if scanned > MAX_ENTRIES_TO_SCAN {
+                    break;
+                }
+                
+                let name = entry.file_name().to_string_lossy().to_string();
+                
+                if name.starts_with('.') || IGNORED_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                
+                let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                if !is_dir {
+                    continue;
+                }
+                
+                notebooks.push(Notebook {
+                    id: entry.path().to_string_lossy().to_string(),
+                    name: name.clone(),
+                    path: entry.path().to_string_lossy().to_string(),
+                    children: vec![Notebook {
+                        id: String::new(),
+                        name: String::new(),
+                        path: String::new(),
+                        children: vec![],
+                    }],
+                });
+                
+                if notebooks.len() >= MAX_NOTEBOOKS {
+                    break;
+                }
+            }
+        }
+        
+        notebooks.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        let _ = app.emit("load-complete", LoadComplete { notebooks });
+    });
+}
+
+// Synchronous version for lazy-loading children (small directories)
 #[tauri::command]
 fn list_notebooks(base_path: String) -> Result<Vec<Notebook>, String> {
     let path = PathBuf::from(&base_path);
     if !path.exists() {
         fs::create_dir_all(&path).map_err(|e| e.to_string())?;
     }
-    
-    list_notebooks_recursive(&path)
+    list_notebooks_simple(&path)
 }
 
-fn list_notebooks_recursive(path: &PathBuf) -> Result<Vec<Notebook>, String> {
+// Simple version for import_folder (no progress needed)
+fn list_notebooks_simple(path: &PathBuf) -> Result<Vec<Notebook>, String> {
     let mut notebooks = Vec::new();
-    for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if entry.path().is_dir() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let children = list_notebooks_recursive(&entry.path())?;
-            notebooks.push(Notebook {
-                id: entry.path().to_string_lossy().to_string(),
-                name: name.clone(),
-                path: entry.path().to_string_lossy().to_string(),
-                children,
-            });
+    
+    let entries = match fs::read_dir(path) {
+        Ok(e) => e,
+        Err(_) => return Ok(Vec::new()),
+    };
+    
+    for entry in entries.filter_map(|e| e.ok()).take(MAX_NOTEBOOKS) {
+        let is_dir = match entry.metadata() {
+            Ok(m) => m.is_dir(),
+            Err(_) => continue,
+        };
+        
+        if !is_dir {
+            continue;
         }
+        
+        let name = entry.file_name().to_string_lossy().to_string();
+        
+        if name.starts_with('.') || IGNORED_DIRS.contains(&name.as_str()) {
+            continue;
+        }
+        
+        notebooks.push(Notebook {
+            id: entry.path().to_string_lossy().to_string(),
+            name: name.clone(),
+            path: entry.path().to_string_lossy().to_string(),
+            children: vec![Notebook {
+                id: String::new(),
+                name: String::new(),
+                path: String::new(),
+                children: vec![],
+            }],
+        });
     }
+    
+    notebooks.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(notebooks)
 }
 
@@ -502,7 +647,7 @@ fn import_folder(base_path: String, folder_path: String) -> Result<Notebook, Str
     let dest = PathBuf::from(&base_path).join(&folder_name);
     
     if dest.exists() {
-        let children = list_notebooks_recursive(&dest)?;
+        let children = list_notebooks_simple(&dest)?;
         return Ok(Notebook {
             id: dest.to_string_lossy().to_string(),
             name: folder_name,
@@ -514,7 +659,7 @@ fn import_folder(base_path: String, folder_path: String) -> Result<Notebook, Str
     fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
     import_folder_contents(&source, &dest).map_err(|e| e.to_string())?;
     
-    let children = list_notebooks_recursive(&dest)?;
+    let children = list_notebooks_simple(&dest)?;
     Ok(Notebook {
         id: dest.to_string_lossy().to_string(),
         name: folder_name,
@@ -1070,7 +1215,9 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![
             get_notes_dir,
+            set_notes_dir,
             list_notebooks,
+            list_notebooks_async,
             create_notebook,
             list_notes,
             save_note,

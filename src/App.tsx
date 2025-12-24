@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { watch } from '@tauri-apps/plugin-fs';
 import MDEditor from '@uiw/react-md-editor';
 import rehypeRaw from 'rehype-raw';
 import { v4 as uuidv4 } from 'uuid';
 import { Note, Notebook, SyncConfig, AppSettings, SearchResult, SyncStatus, OpenTab, NotebookStyle } from './types';
 import './App.css';
+
+interface LoadComplete {
+  notebooks: Notebook[];
+}
 
 function App() {
   const [notesDir, setNotesDir] = useState<string>('');
@@ -42,6 +47,8 @@ function App() {
   // Drag and drop state for notebooks
   const [draggedNotebook, setDraggedNotebook] = useState<Notebook | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [loadingFolders, setLoadingFolders] = useState<Set<string>>(new Set());
+  const [isChangingDirectory, setIsChangingDirectory] = useState(true); // Start true for initial load
   
   // Notes sorting
   const [sortBy, setSortBy] = useState<'name' | 'updated' | 'created'>('name');
@@ -299,30 +306,90 @@ function App() {
     setContent(expanded);
   };
 
+  // Store pending init state for completion handler
+  const pendingInitRef = useRef<{ dir: string } | null>(null);
+
+  // Listen for load-complete events from Rust
   useEffect(() => {
-    initApp();
+    let mounted = true;
+    
+    const setup = async () => {
+      try {
+        await listen<LoadComplete>('load-complete', async (event) => {
+          if (!mounted) return;
+          
+          setNotebooks(event.payload.notebooks);
+          
+          // Complete the rest of initialization if this was from initApp
+          if (pendingInitRef.current) {
+            const dir = pendingInitRef.current.dir;
+            pendingInitRef.current = null;
+            
+            try {
+              const config = await invoke<SyncConfig | null>('load_sync_config', { basePath: dir });
+              if (config) setSyncConfig(config);
+              
+              const appSettings = await invoke<AppSettings>('load_settings', { basePath: dir });
+              setSettings(appSettings);
+              setSidebarWidth(appSettings.sidebar_width);
+              setNotesWidth(appSettings.notes_width);
+              setFavorites(appSettings.favorites);
+              
+              const tags = await invoke<string[]>('get_all_tags', { basePath: dir });
+              setAllTags(tags);
+            } catch (e) {
+              console.error('Failed to load settings:', e);
+            }
+          }
+          
+          setIsChangingDirectory(false);
+        });
+        
+        initApp();
+      } catch (e) {
+        console.error('Failed to set up listeners:', e);
+      }
+    };
+    
+    setup();
+    
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
     if (!notesDir) return;
     
+    // Don't watch very large directories like $HOME
+    // Check if this looks like a home directory or root
+    const isLargeDir = notesDir === '/' || 
+                       notesDir.split('/').filter(Boolean).length <= 2;
+    
+    if (isLargeDir) {
+      return;
+    }
+    
     let stopWatching: (() => void) | undefined;
     const startWatching = async () => {
       try {
         stopWatching = await watch(notesDir, async () => {
-          const nbs = await invoke<Notebook[]>('list_notebooks', { basePath: notesDirRef.current });
-          setNotebooks(nbs);
+          invoke('list_notebooks_async', { basePath: notesDirRef.current });
           
           if (selectedNotebook) {
-            const notesList = await invoke<Note[]>('list_notes', { notebookPath: selectedNotebook.path });
-            setNotes(notesList);
-            
-            if (selectedNote && !notesList.some(n => n.id === selectedNote.id)) {
-              setSelectedNote(null);
-              setContent('');
+            try {
+              const notesList = await invoke<Note[]>('list_notes', { notebookPath: selectedNotebook.path });
+              setNotes(notesList);
+              
+              if (selectedNote && !notesList.some(n => n.id === selectedNote.id)) {
+                setSelectedNote(null);
+                setContent('');
+              }
+            } catch (err) {
+              console.error('Failed to refresh notes:', err);
             }
           }
-        }, { recursive: true });
+        }, { recursive: false }); // Don't watch recursively
       } catch (err) {
         console.error('Failed to watch directory:', err);
       }
@@ -389,25 +456,23 @@ function App() {
   }, [isResizingSidebar, isResizingNotes, sidebarWidth, notesWidth, settings, notesDir]);
 
   const initApp = async () => {
-    try {
-      const dir = await invoke<string>('get_notes_dir');
-      setNotesDir(dir);
-      const nbs = await invoke<Notebook[]>('list_notebooks', { basePath: dir });
-      setNotebooks(nbs);
-      const config = await invoke<SyncConfig | null>('load_sync_config', { basePath: dir });
-      if (config) setSyncConfig(config);
-      
-      const appSettings = await invoke<AppSettings>('load_settings', { basePath: dir });
-      setSettings(appSettings);
-      setSidebarWidth(appSettings.sidebar_width);
-      setNotesWidth(appSettings.notes_width);
-      setFavorites(appSettings.favorites);
-      
-      const tags = await invoke<string[]>('get_all_tags', { basePath: dir });
-      setAllTags(tags);
-    } catch (e) {
-      console.error('Failed to initialize:', e);
-    }
+    setIsChangingDirectory(true);
+    
+    // Use setTimeout to let React render the loading state first
+    setTimeout(async () => {
+      try {
+        const dir = await invoke<string>('get_notes_dir');
+        setNotesDir(dir);
+        
+        // Store dir for completion handler
+        pendingInitRef.current = { dir };
+        
+        invoke('list_notebooks_async', { basePath: dir });
+      } catch (e) {
+        console.error('Failed to initialize:', e);
+        setIsChangingDirectory(false);
+      }
+    }, 50);
   };
 
   const loadNotes = useCallback(async (notebook: Notebook) => {
@@ -534,13 +599,62 @@ function App() {
     await invoke('save_settings', { basePath: notesDir, settings: newSettings });
   };
 
-  const toggleFolder = (id: string) => {
-    setExpandedFolders(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  // Helper to check if notebook has real children loaded (not just placeholder)
+  const hasRealChildren = (notebook: Notebook): boolean => {
+    return notebook.children.length > 0 && notebook.children[0].id !== '';
+  };
+
+  // Helper to check if notebook is expandable (has placeholder or real children)
+  const isExpandable = (notebook: Notebook): boolean => {
+    return notebook.children.length > 0;
+  };
+
+  // Update a notebook's children in the tree
+  const updateNotebookChildren = (notebooks: Notebook[], targetPath: string, children: Notebook[]): Notebook[] => {
+    return notebooks.map(nb => {
+      if (nb.path === targetPath) {
+        return { ...nb, children };
+      }
+      if (nb.children.length > 0) {
+        return { ...nb, children: updateNotebookChildren(nb.children, targetPath, children) };
+      }
+      return nb;
     });
+  };
+
+  const toggleFolder = async (notebook: Notebook) => {
+    const isExpanded = expandedFolders.has(notebook.id);
+    
+    if (isExpanded) {
+      // Collapse
+      setExpandedFolders(prev => {
+        const next = new Set(prev);
+        next.delete(notebook.id);
+        return next;
+      });
+    } else {
+      // Expand - fetch children if not already loaded
+      if (!hasRealChildren(notebook) && isExpandable(notebook)) {
+        setLoadingFolders(prev => new Set(prev).add(notebook.id));
+        try {
+          const children = await invoke<Notebook[]>('list_notebooks', { basePath: notebook.path });
+          setNotebooks(prev => updateNotebookChildren(prev, notebook.path, children));
+        } catch (e) {
+          console.error('Failed to load children:', e);
+        } finally {
+          setLoadingFolders(prev => {
+            const next = new Set(prev);
+            next.delete(notebook.id);
+            return next;
+          });
+        }
+      }
+      setExpandedFolders(prev => {
+        const next = new Set(prev);
+        next.add(notebook.id);
+        return next;
+      });
+    }
   };
 
   // Move notebook to another location
@@ -574,12 +688,14 @@ function App() {
   };
 
   const NotebookItem = ({ notebook, depth = 0 }: { notebook: Notebook; depth?: number }) => {
-    const hasChildren = notebook.children && notebook.children.length > 0;
+    const hasChildren = isExpandable(notebook);
     const isExpanded = expandedFolders.has(notebook.id);
     const isSelected = selectedNotebook?.id === notebook.id;
     const isDragging = draggedNotebook?.id === notebook.id;
     const isDropTarget = dropTarget === notebook.id;
+    const isLoading = loadingFolders.has(notebook.id);
     const style = getNotebookStyle(notebook.path);
+    const childrenLoaded = hasRealChildren(notebook);
 
     return (
       <>
@@ -632,21 +748,21 @@ function App() {
         >
           {hasChildren && (
             <span 
-              className="folder-toggle" 
-              onClick={(e) => { e.stopPropagation(); toggleFolder(notebook.id); }}
+              className={`folder-toggle ${isLoading ? 'loading' : ''}`}
+              onClick={(e) => { e.stopPropagation(); toggleFolder(notebook); }}
               onDragStart={(e) => e.preventDefault()}
             >
-              {isExpanded ? '▼' : '▶'}
+              {isLoading ? <span className="spinner" /> : (isExpanded ? '▼' : '▶')}
             </span>
           )}
           {!hasChildren && <span className="folder-toggle-placeholder" />}
           <span className="notebook-icon">{style.icon}</span>
           <span className="notebook-name">{notebook.name}</span>
         </li>
-        {hasChildren && isExpanded && (
+        {hasChildren && isExpanded && childrenLoaded && (
           <ul className="nested-notebooks">
-            {notebook.children.map(child => (
-              <NotebookItem key={child.id} notebook={child} depth={depth + 1} />
+            {notebook.children.map((child, idx) => (
+              <NotebookItem key={`${child.id}-${idx}`} notebook={child} depth={depth + 1} />
             ))}
           </ul>
         )}
@@ -926,10 +1042,54 @@ function App() {
     );
   };
 
+  const changeNotesDirectory = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({ 
+        directory: true, 
+        title: 'Select Notes Directory',
+        defaultPath: notesDir 
+      });
+      if (selected && typeof selected === 'string') {
+        // Show loading state and close modal
+        setIsChangingDirectory(true);
+        setShowSettings(false);
+        
+        // Reset state
+        setSelectedNotebook(null);
+        setSelectedNote(null);
+        setContent('');
+        setOpenTabs([]);
+        setActiveTabId(null);
+        setNotebooks([]);
+        setNotesDir(selected);
+        
+        // Store for completion handler
+        pendingInitRef.current = { dir: selected };
+        
+        // Fire and forget - don't await anything
+        invoke('set_notes_dir', { path: selected }).catch(e => console.error('set_notes_dir error:', e));
+        invoke('list_notebooks_async', { basePath: selected }).catch(e => console.error('list_notebooks_async error:', e));
+      }
+    } catch (err) {
+      console.error('Failed to change notes directory:', err);
+      setIsChangingDirectory(false);
+    }
+  };
+
   const SettingsModal = () => (
     <div className="modal-overlay" onClick={() => setShowSettings(false)}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <h2>Settings</h2>
+        
+        <div className="settings-section">
+          <label>Notes Directory</label>
+          <div className="notes-dir-setting">
+            <code className="current-dir">{notesDir}</code>
+            <button onClick={changeNotesDirectory}>Change...</button>
+          </div>
+        </div>
+        
         <div className="settings-section">
           <label>Font Size</label>
           <input
@@ -1022,6 +1182,14 @@ function App() {
 
   return (
     <div className="app">
+      {isChangingDirectory && (
+        <div className="loading-overlay">
+          <div className="loading-content">
+            <div className="loading-spinner" />
+            <p>Loading directory...</p>
+          </div>
+        </div>
+      )}
       <aside className="sidebar" style={{ width: sidebarWidth }}>
         <div className="sidebar-header">
           <h1>Azimuth</h1>
@@ -1113,7 +1281,7 @@ function App() {
             </div>
           )}
           <ul>
-            {notebooks.map(nb => <NotebookItem key={nb.id} notebook={nb} />)}
+            {notebooks.map((nb, idx) => <NotebookItem key={`${nb.id}-${idx}`} notebook={nb} />)}
           </ul>
         </div>
         <div className="resize-handle" onMouseDown={() => setIsResizingSidebar(true)} />

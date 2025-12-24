@@ -253,10 +253,30 @@ body {
   cursor: pointer;
   opacity: 0.7;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .folder-toggle:hover {
   opacity: 1;
+}
+
+.folder-toggle.loading {
+  opacity: 1;
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .folder-toggle-placeholder {
@@ -567,6 +587,52 @@ body {
   opacity: 0.7;
 }
 
+/* Loading overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--text-primary);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.progress-bar-container {
+  width: 300px;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.1s ease-out;
+}
+
 /* Modal styles */
 .modal-overlay {
   position: fixed;
@@ -676,6 +742,40 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-primary);
+}
+
+.notes-dir-setting {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.notes-dir-setting .current-dir {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-dir-setting button {
+  padding: 8px 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  color: var(--bg-primary);
+  cursor: pointer;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.notes-dir-setting button:hover {
+  opacity: 0.9;
 }
 
 .settings-btn {
