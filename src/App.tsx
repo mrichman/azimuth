@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { watch } from '@tauri-apps/plugin-fs';
@@ -306,6 +306,21 @@ function App() {
     setContent(expanded);
   };
 
+  // Helper to merge new notebooks with existing ones, preserving loaded children
+  const mergeNotebooks = (newNotebooks: Notebook[], existingNotebooks: Notebook[]): Notebook[] => {
+    return newNotebooks.map(newNb => {
+      const existing = existingNotebooks.find(e => e.path === newNb.path);
+      if (existing && hasRealChildren(existing)) {
+        // Keep the existing loaded children entirely
+        return {
+          ...newNb,
+          children: existing.children
+        };
+      }
+      return newNb;
+    });
+  };
+
   // Store pending init state for completion handler
   const pendingInitRef = useRef<{ dir: string } | null>(null);
 
@@ -318,7 +333,13 @@ function App() {
         await listen<LoadComplete>('load-complete', async (event) => {
           if (!mounted) return;
           
-          setNotebooks(event.payload.notebooks);
+          // Merge new notebooks with existing ones to preserve loaded children
+          setNotebooks(prev => {
+            if (prev.length === 0) {
+              return event.payload.notebooks;
+            }
+            return mergeNotebooks(event.payload.notebooks, prev);
+          });
           
           // Complete the rest of initialization if this was from initApp
           if (pendingInitRef.current) {
@@ -687,20 +708,20 @@ function App() {
     }
   };
 
-  const NotebookItem = ({ notebook, depth = 0 }: { notebook: Notebook; depth?: number }) => {
+  const renderNotebookItem = (notebook: Notebook, depth = 0): React.ReactNode => {
     const hasChildren = isExpandable(notebook);
     const isExpanded = expandedFolders.has(notebook.id);
     const isSelected = selectedNotebook?.id === notebook.id;
     const isDragging = draggedNotebook?.id === notebook.id;
-    const isDropTarget = dropTarget === notebook.id;
+    const isDropTargetItem = dropTarget === notebook.id;
     const isLoading = loadingFolders.has(notebook.id);
     const style = getNotebookStyle(notebook.path);
     const childrenLoaded = hasRealChildren(notebook);
 
     return (
-      <>
+      <React.Fragment key={`${notebook.id}-${depth}`}>
         <li
-          className={`notebook-item ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDropTarget ? 'drop-target' : ''}`}
+          className={`notebook-item ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDropTargetItem ? 'drop-target' : ''}`}
           style={{ paddingLeft: `${8 + depth * 12}px`, color: style.color }}
           onClick={() => setSelectedNotebook(notebook)}
           onContextMenu={(e) => {
@@ -761,12 +782,10 @@ function App() {
         </li>
         {hasChildren && isExpanded && childrenLoaded && (
           <ul className="nested-notebooks">
-            {notebook.children.map((child, idx) => (
-              <NotebookItem key={`${child.id}-${idx}`} notebook={child} depth={depth + 1} />
-            ))}
+            {notebook.children.map((child) => renderNotebookItem(child, depth + 1))}
           </ul>
         )}
-      </>
+      </React.Fragment>
     );
   };
 
@@ -1281,7 +1300,7 @@ function App() {
             </div>
           )}
           <ul>
-            {notebooks.map((nb, idx) => <NotebookItem key={`${nb.id}-${idx}`} notebook={nb} />)}
+            {notebooks.map((nb) => renderNotebookItem(nb, 0))}
           </ul>
         </div>
         <div className="resize-handle" onMouseDown={() => setIsResizingSidebar(true)} />
