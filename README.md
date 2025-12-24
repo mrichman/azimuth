@@ -96,3 +96,16 @@ just seed         # Create sample content for testing
 ## License
 
 MIT
+
+
+---
+
+## Colophon
+
+*Azimuth* — from Arabic *as-sumūt*, meaning "the directions."
+
+In navigation, an azimuth is the angle between a reference direction and a point of interest. Sailors and explorers used azimuth readings to chart courses across uncharted waters, transforming the overwhelming expanse of ocean into a series of manageable bearings.
+
+Notes work the same way. Each thought, each fragment of an idea, is a point in the vast sea of everything you might think or know. Azimuth is the tool that helps you take a bearing on those points — to capture them, organize them, and find your way back to them when you need them most.
+
+The name is a reminder that writing isn't just storage. It's orientation. It's knowing where you are, where you've been, and where you're headed next.
