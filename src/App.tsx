@@ -43,6 +43,7 @@ function App() {
   const [newTag, setNewTag] = useState('');
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   
   // Drag and drop state for notebooks
   const [draggedNotebook, setDraggedNotebook] = useState<Notebook | null>(null);
@@ -369,6 +370,7 @@ function App() {
     let mounted = true;
     let unlistenLoadComplete: (() => void) | undefined;
     let unlistenOpenSettings: (() => void) | undefined;
+    let unlistenOpenHelp: (() => void) | undefined;
     
     const setup = async () => {
       try {
@@ -415,6 +417,13 @@ function App() {
           }
         });
         
+        // Listen for open-help event from native menu
+        unlistenOpenHelp = await listen('open-help', () => {
+          if (mounted) {
+            setShowHelp(true);
+          }
+        });
+        
         initApp();
       } catch (e) {
         console.error('Failed to set up listeners:', e);
@@ -427,6 +436,7 @@ function App() {
       mounted = false;
       unlistenLoadComplete?.();
       unlistenOpenSettings?.();
+      unlistenOpenHelp?.();
     };
   }, []);
 
@@ -1427,6 +1437,76 @@ function App() {
     </div>
   );
 
+  const HelpModal = () => (
+    <div className="modal-overlay" onClick={() => setShowHelp(false)}>
+      <div className="modal help-modal" onClick={e => e.stopPropagation()}>
+        <h2>Azimuth Help</h2>
+        
+        <div className="help-content">
+          <section>
+            <h3>Getting Started</h3>
+            <p>Azimuth is a note-taking app that stores your notes as markdown files in a folder on your computer.</p>
+            <p>Notes are organized in <strong>notebooks</strong> (folders) and can contain text, images, and attachments.</p>
+          </section>
+          
+          <section>
+            <h3>Keyboard Shortcuts</h3>
+            <table className="help-table">
+              <tbody>
+                <tr><td><kbd>⌘S</kbd></td><td>Save note</td></tr>
+                <tr><td><kbd>⌘K</kbd></td><td>Search all notes</td></tr>
+                <tr><td><kbd>⌘,</kbd></td><td>Open Settings</td></tr>
+                <tr><td><kbd>⌘?</kbd></td><td>Open Help</td></tr>
+              </tbody>
+            </table>
+          </section>
+          
+          <section>
+            <h3>Quick Commands</h3>
+            <p>Type these in the editor to auto-expand:</p>
+            <table className="help-table">
+              <tbody>
+                <tr><td><code>:date</code></td><td>Current date and time (YYYY-MM-DD HH:MM)</td></tr>
+                <tr><td><code>:today</code></td><td>Current date (YYYY-MM-DD)</td></tr>
+                <tr><td><code>:time</code></td><td>Current time (HH:MM)</td></tr>
+              </tbody>
+            </table>
+          </section>
+          
+          <section>
+            <h3>Working with Notes</h3>
+            <ul>
+              <li><strong>Create a note:</strong> Click the + button in the Notes panel</li>
+              <li><strong>Rename/Delete:</strong> Right-click a note in the list</li>
+              <li><strong>Add images:</strong> Click the image icon in the toolbar, or paste/drag images</li>
+              <li><strong>Favorite a note:</strong> Click the ☆ button in the toolbar</li>
+              <li><strong>Tag notes:</strong> Click "+ Tag" below the toolbar</li>
+            </ul>
+          </section>
+          
+          <section>
+            <h3>Working with Notebooks</h3>
+            <ul>
+              <li><strong>Create a notebook:</strong> Click the + button in the Notebooks header</li>
+              <li><strong>Import a folder:</strong> Click the 📁 button</li>
+              <li><strong>Customize:</strong> Right-click a notebook → Customize (change icon/color)</li>
+              <li><strong>Add to Favorites:</strong> Right-click a notebook → Add to Favorites</li>
+              <li><strong>Move notebooks:</strong> Drag and drop to reorganize</li>
+            </ul>
+          </section>
+          
+          <section>
+            <h3>Data Storage</h3>
+            <p>Notes are stored in <code>~/Azimuth/</code> by default. You can change this in Settings.</p>
+            <p>Each notebook is a folder, and notes are files within those folders.</p>
+          </section>
+        </div>
+        
+        <button className="close-btn" onClick={() => setShowHelp(false)}>Close</button>
+      </div>
+    </div>
+  );
+
   const editorStyle = settings ? {
     '--editor-font-family': settings.font_family,
     '--editor-font-size': `${settings.font_size}px`,
@@ -1803,6 +1883,7 @@ function App() {
       
       {showSearch && <SearchModal />}
       {showSettings && <SettingsModal />}
+      {showHelp && <HelpModal />}
       {customizingNotebook && <NotebookCustomizeModal />}
       {contextMenu && <NotebookContextMenu />}
     </div>

@@ -1275,11 +1275,21 @@ pub fn run() {
                 .item(&PredefinedMenuItem::close_window(app, None)?)
                 .build()?;
             
+            // Build the Help submenu
+            let help_item = MenuItemBuilder::with_id("help", "Azimuth Help")
+                .accelerator("CmdOrCtrl+?")
+                .build(app)?;
+            
+            let help_submenu = SubmenuBuilder::new(app, "Help")
+                .item(&help_item)
+                .build()?;
+            
             // Build the full menu
             let menu = MenuBuilder::new(app)
                 .item(&app_submenu)
                 .item(&edit_submenu)
                 .item(&window_submenu)
+                .item(&help_submenu)
                 .build()?;
             
             app.set_menu(menu)?;
@@ -1291,6 +1301,12 @@ pub fn run() {
                 // Emit event to frontend to open settings
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.emit("open-settings", ());
+                }
+            }
+            if event.id().as_ref() == "help" {
+                // Emit event to frontend to open help
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.emit("open-help", ());
                 }
             }
         })
