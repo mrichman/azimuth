@@ -30,6 +30,7 @@ export interface AppSettings {
   tags: Record<string, string[]>;
   notebook_styles: Record<string, NotebookStyle>;
   pinned_folders: string[];
+  auto_save: boolean;
 }
 
 export interface NotebookStyle {

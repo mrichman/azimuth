@@ -61,6 +61,12 @@ pub struct AppSettings {
     pub notebook_styles: HashMap<String, NotebookStyle>,
     #[serde(default)]
     pub pinned_folders: Vec<String>,
+    #[serde(default = "default_auto_save")]
+    pub auto_save: bool,
+}
+
+fn default_auto_save() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -74,6 +80,7 @@ impl Default for AppSettings {
             tags: HashMap::new(),
             notebook_styles: HashMap::new(),
             pinned_folders: Vec::new(),
+            auto_save: true,
         }
     }
 }

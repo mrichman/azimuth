@@ -80,9 +80,27 @@ function App() {
 
   const notesDirRef = useRef(notesDir);
   const notebooksRef = useRef(notebooks);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contentRef = useRef(content);
+  const selectedNoteRef = useRef(selectedNote);
+  const selectedNotebookRef = useRef(selectedNotebook);
 
   useEffect(() => { notesDirRef.current = notesDir; }, [notesDir]);
   useEffect(() => { notebooksRef.current = notebooks; }, [notebooks]);
+  useEffect(() => { contentRef.current = content; }, [content]);
+  useEffect(() => { selectedNoteRef.current = selectedNote; }, [selectedNote]);
+  useEffect(() => { selectedNotebookRef.current = selectedNotebook; }, [selectedNotebook]);
+  const settingsRef = useRef(settings);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  
+  // Clean up auto-save timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
 
   // Tab management functions
   const openNoteInTab = (note: Note) => {
@@ -345,6 +363,33 @@ function App() {
     const newContent = val || '';
     const expanded = expandShortcuts(newContent);
     setContent(expanded);
+    
+    // Auto-save after 1 second of no typing (if enabled)
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(async () => {
+      // Check if auto-save is enabled
+      if (!settingsRef.current?.auto_save) return;
+      
+      const note = selectedNoteRef.current;
+      const notebook = selectedNotebookRef.current;
+      const currentContent = contentRef.current;
+      
+      if (note && notebook && isEditableFile(note.id)) {
+        try {
+          await invoke('save_note', { notebookPath: notebook.path, noteId: note.id, content: currentContent });
+          const title = currentContent.split('\n')[0].replace(/^#\s*/, '') || 'Untitled';
+          const updatedNote = { ...note, content: currentContent, title, updated_at: new Date().toISOString() };
+          setSelectedNote(updatedNote);
+          setOpenTabs(prev => prev.map(t => 
+            t.note.id === note.id ? { ...t, note: updatedNote, content: currentContent, isDirty: false } : t
+          ));
+        } catch (e) {
+          console.error('Auto-save failed:', e);
+        }
+      }
+    }, 1000);
   };
 
   // Helper to merge new notebooks with existing ones, preserving loaded children
@@ -1524,7 +1569,21 @@ function App() {
       )}
       <aside className="sidebar" style={{ width: sidebarWidth }}>
         <div className="sidebar-header">
-          <h1>Azimuth</h1>
+          <label className="auto-save-toggle" title={settings?.auto_save ? 'Auto-save enabled' : 'Auto-save disabled'}>
+            <input 
+              type="checkbox" 
+              checked={settings?.auto_save ?? true}
+              onChange={async (e) => {
+                if (settings && notesDir) {
+                  const newSettings = { ...settings, auto_save: e.target.checked };
+                  setSettings(newSettings);
+                  await invoke('save_settings', { basePath: notesDir, settings: newSettings });
+                }
+              }}
+            />
+            <span className="toggle-slider"></span>
+            <span className="toggle-label">Auto-save</span>
+          </label>
           <div className="header-buttons">
             <button onClick={() => setShowSearch(true)} title="Search (Cmd+K)">🔍</button>
             <button onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
