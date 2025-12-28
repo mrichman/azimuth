@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -59,6 +59,8 @@ pub struct AppSettings {
     pub tags: HashMap<String, Vec<String>>,
     #[serde(default)]
     pub notebook_styles: HashMap<String, NotebookStyle>,
+    #[serde(default)]
+    pub pinned_folders: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -71,6 +73,7 @@ impl Default for AppSettings {
             favorites: Vec::new(),
             tags: HashMap::new(),
             notebook_styles: HashMap::new(),
+            pinned_folders: Vec::new(),
         }
     }
 }
@@ -587,17 +590,34 @@ fn delete_note(notebook_path: String, note_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn rename_note(notebook_path: String, old_id: String, new_id: String) -> Result<(), String> {
+    let old_path = PathBuf::from(&notebook_path).join(&old_id);
+    let new_path = PathBuf::from(&notebook_path).join(&new_id);
+    
+    if !old_path.exists() {
+        return Err(format!("File does not exist: {}", old_id));
+    }
+    
+    if new_path.exists() {
+        return Err(format!("A file with that name already exists: {}", new_id));
+    }
+    
+    fs::rename(&old_path, &new_path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn read_note(notebook_path: String, note_id: String) -> Result<String, String> {
     let path = PathBuf::from(&notebook_path).join(&note_id);
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn save_attachment(notebook_path: String, note_id: String, file_name: String, data: String) -> Result<String, String> {
-    let attachments_dir = PathBuf::from(&notebook_path).join(&note_id);
-    fs::create_dir_all(&attachments_dir).map_err(|e| e.to_string())?;
+fn save_attachment(notebook_path: String, _note_id: String, file_name: String, data: String) -> Result<String, String> {
+    // Save attachment directly in the notebook folder (adjacent to notes)
+    let notebook_dir = PathBuf::from(&notebook_path);
     
-    let file_path = attachments_dir.join(&file_name);
+    let file_path = notebook_dir.join(&file_name);
     let decoded = STANDARD.decode(&data).map_err(|e| e.to_string())?;
     fs::write(&file_path, decoded).map_err(|e| e.to_string())?;
     
@@ -1213,6 +1233,67 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_http::init())
+        .setup(|app| {
+            use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem};
+            
+            // Build the Settings menu item
+            let settings_item = MenuItemBuilder::with_id("settings", "Settings...")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?;
+            
+            // Build the app submenu (macOS app menu)
+            let app_submenu = SubmenuBuilder::new(app, "Azimuth")
+                .item(&PredefinedMenuItem::about(app, Some("About Azimuth"), None)?)
+                .separator()
+                .item(&settings_item)
+                .separator()
+                .item(&PredefinedMenuItem::services(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::hide(app, None)?)
+                .item(&PredefinedMenuItem::hide_others(app, None)?)
+                .item(&PredefinedMenuItem::show_all(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::quit(app, None)?)
+                .build()?;
+            
+            // Build the Edit submenu
+            let edit_submenu = SubmenuBuilder::new(app, "Edit")
+                .item(&PredefinedMenuItem::undo(app, None)?)
+                .item(&PredefinedMenuItem::redo(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::cut(app, None)?)
+                .item(&PredefinedMenuItem::copy(app, None)?)
+                .item(&PredefinedMenuItem::paste(app, None)?)
+                .item(&PredefinedMenuItem::select_all(app, None)?)
+                .build()?;
+            
+            // Build the Window submenu
+            let window_submenu = SubmenuBuilder::new(app, "Window")
+                .item(&PredefinedMenuItem::minimize(app, None)?)
+                .item(&PredefinedMenuItem::maximize(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::close_window(app, None)?)
+                .build()?;
+            
+            // Build the full menu
+            let menu = MenuBuilder::new(app)
+                .item(&app_submenu)
+                .item(&edit_submenu)
+                .item(&window_submenu)
+                .build()?;
+            
+            app.set_menu(menu)?;
+            
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "settings" {
+                // Emit event to frontend to open settings
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.emit("open-settings", ());
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_notes_dir,
             set_notes_dir,
@@ -1222,6 +1303,7 @@ pub fn run() {
             list_notes,
             save_note,
             delete_note,
+            rename_note,
             read_note,
             save_attachment,
             get_attachment_path,

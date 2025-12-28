@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { watch } from '@tauri-apps/plugin-fs';
-import MDEditor from '@uiw/react-md-editor';
+import MDEditor, { commands } from '@uiw/react-md-editor';
 import rehypeRaw from 'rehype-raw';
 import { v4 as uuidv4 } from 'uuid';
 import { Note, Notebook, SyncConfig, AppSettings, SearchResult, SyncStatus, OpenTab, NotebookStyle } from './types';
@@ -56,6 +56,20 @@ function App() {
   
   // Notebook customization
   const [customizingNotebook, setCustomizingNotebook] = useState<Notebook | null>(null);
+  
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ 
+    x: number; 
+    y: number; 
+    notebook?: Notebook;
+    notePath?: string;
+    note?: Note;
+    inFavorites: boolean;
+  } | null>(null);
+  
+  // Renaming state
+  const [renamingNote, setRenamingNote] = useState<Note | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   
   // Resizable panels
   const [sidebarWidth, setSidebarWidth] = useState(200);
@@ -222,6 +236,32 @@ function App() {
     await invoke('save_settings', { basePath: notesDir, settings: newSettings });
   };
 
+  // Pin/unpin folders
+  const isPinned = (notebookPath: string): boolean => {
+    return settings?.pinned_folders?.includes(notebookPath) || false;
+  };
+
+  const togglePin = async (notebookPath: string) => {
+    if (!settings || !notesDir) return;
+    const currentPinned = settings.pinned_folders || [];
+    const newPinned = currentPinned.includes(notebookPath)
+      ? currentPinned.filter(p => p !== notebookPath)
+      : [...currentPinned, notebookPath];
+    const newSettings = { ...settings, pinned_folders: newPinned };
+    setSettings(newSettings);
+    await invoke('save_settings', { basePath: notesDir, settings: newSettings });
+  };
+
+  const toggleFavoriteByPath = async (notePath: string) => {
+    if (!notesDir) return;
+    try {
+      const newSettings = await invoke<AppSettings>('toggle_favorite', { basePath: notesDir, notePath });
+      setFavorites(newSettings.favorites);
+    } catch (e) {
+      console.error('Failed to toggle favorite:', e);
+    }
+  };
+
   // File type icons
   const getFileIcon = (filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase() || '';
@@ -327,10 +367,12 @@ function App() {
   // Listen for load-complete events from Rust
   useEffect(() => {
     let mounted = true;
+    let unlistenLoadComplete: (() => void) | undefined;
+    let unlistenOpenSettings: (() => void) | undefined;
     
     const setup = async () => {
       try {
-        await listen<LoadComplete>('load-complete', async (event) => {
+        unlistenLoadComplete = await listen<LoadComplete>('load-complete', async (event) => {
           if (!mounted) return;
           
           // Merge new notebooks with existing ones to preserve loaded children
@@ -366,6 +408,13 @@ function App() {
           setIsChangingDirectory(false);
         });
         
+        // Listen for open-settings event from native menu
+        unlistenOpenSettings = await listen('open-settings', () => {
+          if (mounted) {
+            setShowSettings(true);
+          }
+        });
+        
         initApp();
       } catch (e) {
         console.error('Failed to set up listeners:', e);
@@ -376,6 +425,8 @@ function App() {
     
     return () => {
       mounted = false;
+      unlistenLoadComplete?.();
+      unlistenOpenSettings?.();
     };
   }, []);
 
@@ -726,7 +777,7 @@ function App() {
           onClick={() => setSelectedNotebook(notebook)}
           onContextMenu={(e) => {
             e.preventDefault();
-            setCustomizingNotebook(notebook);
+            setContextMenu({ x: e.clientX, y: e.clientY, notebook, inFavorites: false });
           }}
           draggable={true}
           onDragStart={(e) => {
@@ -864,7 +915,11 @@ function App() {
       const title = content.split('\n')[0].replace(/^#\s*/, '') || 'Untitled';
       const updatedNote = { ...selectedNote, content, title, updated_at: new Date().toISOString() };
       setSelectedNote(updatedNote);
-      setNotes(notes.map(n => n.id === selectedNote.id ? updatedNote : n));
+      
+      // Refresh the notes list to pick up any new files (e.g., pasted images)
+      const notesList = await invoke<Note[]>('list_notes', { notebookPath: selectedNotebook.path });
+      setNotes(notesList);
+      
       // Update tab to mark as not dirty
       setOpenTabs(prev => prev.map(t => 
         t.note.id === selectedNote.id ? { ...t, note: updatedNote, content, isDirty: false } : t
@@ -939,6 +994,55 @@ function App() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // Handle image insertion via file dialog
+  const handleInsertImage = async () => {
+    if (!selectedNote || !selectedNotebook) return;
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{
+          name: 'Images',
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']
+        }]
+      });
+      console.log('Selected file:', selected);
+      if (selected && typeof selected === 'string') {
+        // Read the file and save as attachment
+        const { readFile: readBinaryFile } = await import('@tauri-apps/plugin-fs');
+        const fileData = await readBinaryFile(selected);
+        console.log('File data length:', fileData.length);
+        
+        // Convert Uint8Array to base64 properly
+        let binary = '';
+        const bytes = new Uint8Array(fileData);
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+        console.log('Base64 length:', base64.length);
+        
+        const fileName = selected.split('/').pop() || `image_${Date.now()}.png`;
+        console.log('Saving attachment:', { notebookPath: selectedNotebook.path, noteId: selectedNote.id, fileName });
+        const path = await invoke<string>('save_attachment', {
+          notebookPath: selectedNotebook.path, noteId: selectedNote.id, fileName, data: base64,
+        });
+        console.log('Saved attachment path:', path);
+        setContent(prev => prev + `\n![${fileName}](${path})\n`);
+      }
+    } catch (err) {
+      console.error('Failed to insert image:', err);
+    }
+  };
+
+  // Custom image command for MDEditor
+  const imageCommand = {
+    ...commands.image,
+    execute: () => {
+      handleInsertImage();
+    },
   };
 
   // Sync
@@ -1056,6 +1160,135 @@ function App() {
           </div>
           
           <button className="close-btn" onClick={() => setCustomizingNotebook(null)}>Done</button>
+        </div>
+      </div>
+    );
+  };
+
+  const NotebookContextMenu = () => {
+    if (!contextMenu) return null;
+    
+    const handleRemoveFromFavorites = async () => {
+      if (contextMenu.notebook) {
+        // Remove pinned folder
+        togglePin(contextMenu.notebook.path);
+      } else if (contextMenu.notePath) {
+        // Remove favorite note
+        toggleFavoriteByPath(contextMenu.notePath);
+      }
+      setContextMenu(null);
+    };
+    
+    const handlePin = () => {
+      if (contextMenu.notebook) {
+        togglePin(contextMenu.notebook.path);
+      }
+      setContextMenu(null);
+    };
+    
+    const handleCustomize = () => {
+      if (contextMenu.notebook) {
+        setCustomizingNotebook(contextMenu.notebook);
+      }
+      setContextMenu(null);
+    };
+    
+    const handleRenameNote = () => {
+      if (contextMenu.note) {
+        setRenamingNote(contextMenu.note);
+        setRenameValue(contextMenu.note.id);
+      }
+      setContextMenu(null);
+    };
+    
+    const handleDeleteNote = async () => {
+      const noteToDelete = contextMenu.note;
+      const notebookPath = selectedNotebook?.path;
+      
+      if (!noteToDelete || !notebookPath) {
+        setContextMenu(null);
+        return;
+      }
+      
+      // Close context menu first
+      setContextMenu(null);
+      
+      // Use Tauri's native confirm dialog
+      const { ask } = await import('@tauri-apps/plugin-dialog');
+      const confirmed = await ask(`Delete "${noteToDelete.title}"?`, {
+        title: 'Confirm Delete',
+        kind: 'warning',
+      });
+      
+      if (!confirmed) {
+        return;
+      }
+      
+      try {
+        await invoke('delete_note', { notebookPath, noteId: noteToDelete.id });
+        // Refresh notes list
+        const notesList = await invoke<Note[]>('list_notes', { notebookPath });
+        setNotes(notesList);
+        // Close tab if open
+        if (openTabs.some(t => t.note.id === noteToDelete.id)) {
+          closeTab(noteToDelete.id);
+        }
+      } catch (e) {
+        console.error('Failed to delete note:', e);
+        alert(`Failed to delete: ${e}`);
+      }
+    };
+    
+    // Context menu for notes in the notes list
+    if (contextMenu.note) {
+      return (
+        <div className="context-menu-overlay" onClick={() => setContextMenu(null)}>
+          <div 
+            className="context-menu" 
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button onClick={handleRenameNote}>
+              ✏️ Rename
+            </button>
+            <button onClick={handleDeleteNote}>
+              🗑️ Delete
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    // Show different menu based on context
+    if (contextMenu.inFavorites) {
+      return (
+        <div className="context-menu-overlay" onClick={() => setContextMenu(null)}>
+          <div 
+            className="context-menu" 
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button onClick={handleRemoveFromFavorites}>
+              ✕ Remove from Favorites
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="context-menu-overlay" onClick={() => setContextMenu(null)}>
+        <div 
+          className="context-menu" 
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={e => e.stopPropagation()}
+        >
+          <button onClick={handlePin}>
+            {contextMenu.notebook && isPinned(contextMenu.notebook.path) ? '✕ Remove from Favorites' : '⭐ Add to Favorites'}
+          </button>
+          <button onClick={handleCustomize}>
+            🎨 Customize
+          </button>
         </div>
       </div>
     );
@@ -1228,27 +1461,96 @@ function App() {
           </div>
         )}
         
-        {/* Favorites */}
-        {favorites.length > 0 && (
+        {/* Favorites (pinned folders + favorite notes) */}
+        {(favorites.length > 0 || (settings?.pinned_folders?.length ?? 0) > 0) && (
           <div className="favorites-section">
             <div className="section-header"><span>⭐ Favorites</span></div>
             <ul>
+              {/* Pinned folders first */}
+              {settings?.pinned_folders?.map(pinnedPath => {
+                const notebook = findNotebookByPath(notebooks, pinnedPath);
+                if (!notebook) return null;
+                const style = getNotebookStyle(notebook.path);
+                return (
+                  <li 
+                    key={`folder-${pinnedPath}`} 
+                    className={selectedNotebook?.path === pinnedPath ? 'selected' : ''}
+                    onClick={() => {
+                      // Expand all parent folders in the tree so the selection is visible
+                      // Build list of parent paths from notesDir to the parent of pinnedPath
+                      const relativePath = pinnedPath.startsWith(notesDir) 
+                        ? pinnedPath.slice(notesDir.length + 1) 
+                        : pinnedPath;
+                      const pathParts = relativePath.split('/');
+                      const foldersToExpand: string[] = [];
+                      let currentPath = notesDir;
+                      // Expand all ancestors (not the folder itself)
+                      for (let i = 0; i < pathParts.length - 1; i++) {
+                        currentPath = currentPath + '/' + pathParts[i];
+                        foldersToExpand.push(currentPath);
+                      }
+                      if (foldersToExpand.length > 0) {
+                        setExpandedFolders(prev => {
+                          const next = new Set(prev);
+                          foldersToExpand.forEach(id => next.add(id));
+                          return next;
+                        });
+                      }
+                      setSelectedNotebook(notebook);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({ x: e.clientX, y: e.clientY, notebook, inFavorites: true });
+                    }}
+                  >
+                    <span className="notebook-icon" style={{ color: style.color }}>{style.icon}</span>
+                    <span style={{ color: style.color }}>{notebook.name}</span>
+                  </li>
+                );
+              })}
+              {/* Favorite notes */}
               {favorites.map(fav => {
                 const parts = fav.split('/');
                 const noteId = parts.pop() || '';
                 const notebookPath = parts.join('/');
                 return (
-                  <li key={fav} onClick={async () => {
-                    const notebook = findNotebookByPath(notebooks, notebookPath);
-                    if (notebook) {
-                      setSelectedNotebook(notebook);
-                      const notesList = await invoke<Note[]>('list_notes', { notebookPath });
-                      setNotes(notesList);
-                      const note = notesList.find(n => n.id === noteId);
-                      if (note) { openNoteInTab(note); }
-                    }
-                  }}>
-                    ⭐ {noteId.replace(/\.[^/.]+$/, '')}
+                  <li 
+                    key={`note-${fav}`} 
+                    onClick={async () => {
+                      console.log('Clicked favorite note:', { fav, noteId, notebookPath });
+                      const notebook = findNotebookByPath(notebooks, notebookPath);
+                      console.log('Found notebook:', notebook);
+                      if (notebook) {
+                        setSelectedNotebook(notebook);
+                        const notesList = await invoke<Note[]>('list_notes', { notebookPath });
+                        setNotes(notesList);
+                        const note = notesList.find(n => n.id === noteId);
+                        console.log('Found note:', note);
+                        if (note) { openNoteInTab(note); }
+                      } else {
+                        // Notebook not found in tree - try loading notes directly
+                        console.log('Notebook not in tree, loading directly');
+                        try {
+                          const notesList = await invoke<Note[]>('list_notes', { notebookPath });
+                          setNotes(notesList);
+                          const note = notesList.find(n => n.id === noteId);
+                          if (note) { 
+                            // Create a minimal notebook object for selection
+                            const name = notebookPath.split('/').pop() || '';
+                            setSelectedNotebook({ id: notebookPath, name, path: notebookPath, children: [] });
+                            openNoteInTab(note); 
+                          }
+                        } catch (err) {
+                          console.error('Failed to load notes:', err);
+                        }
+                      }
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({ x: e.clientX, y: e.clientY, notePath: fav, inFavorites: true });
+                    }}
+                  >
+                    📝 {noteId.replace(/\.[^/.]+$/, '')}
                   </li>
                 );
               })}
@@ -1333,11 +1635,66 @@ function App() {
             </div>
             <ul>
               {sortedNotes.map(note => (
-                <li key={note.id} className={selectedNote?.id === note.id ? 'selected' : ''}
-                  onClick={() => openNoteInTab(note)}>
-                  {favorites.includes(`${note.folder}/${note.id}`) && '⭐ '}
-                  {getFileIcon(note.id)} {note.title || 'Untitled'}
-                </li>
+                renamingNote?.id === note.id ? (
+                  <li key={note.id} className="renaming">
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={async e => {
+                        if (e.key === 'Enter' && renameValue.trim() && selectedNotebook) {
+                          try {
+                            await invoke('rename_note', { 
+                              notebookPath: selectedNotebook.path, 
+                              oldId: note.id, 
+                              newId: renameValue.trim() 
+                            });
+                            // Refresh notes list
+                            const notesList = await invoke<Note[]>('list_notes', { notebookPath: selectedNotebook.path });
+                            setNotes(notesList);
+                            // Update selected note if it was renamed
+                            if (selectedNote?.id === note.id) {
+                              const renamedNote = notesList.find(n => n.id === renameValue.trim());
+                              if (renamedNote) {
+                                setSelectedNote(renamedNote);
+                                // Update tab
+                                setOpenTabs(prev => prev.map(t => 
+                                  t.note.id === note.id ? { ...t, note: renamedNote } : t
+                                ));
+                                setActiveTabId(renamedNote.id);
+                              }
+                            }
+                          } catch (err) {
+                            console.error('Failed to rename:', err);
+                            alert(`Failed to rename: ${err}`);
+                          }
+                          setRenamingNote(null);
+                          setRenameValue('');
+                        } else if (e.key === 'Escape') {
+                          setRenamingNote(null);
+                          setRenameValue('');
+                        }
+                      }}
+                      onBlur={() => {
+                        setRenamingNote(null);
+                        setRenameValue('');
+                      }}
+                    />
+                  </li>
+                ) : (
+                  <li 
+                    key={note.id} 
+                    className={selectedNote?.id === note.id ? 'selected' : ''}
+                    onClick={() => openNoteInTab(note)}
+                    onContextMenu={e => {
+                      e.preventDefault();
+                      setContextMenu({ x: e.clientX, y: e.clientY, note, inFavorites: false });
+                    }}
+                  >
+                    {favorites.includes(`${note.folder}/${note.id}`) && '⭐ '}
+                    {getFileIcon(note.id)} {note.title || 'Untitled'}
+                  </li>
+                )
               ))}
             </ul>
           </div>
@@ -1399,9 +1756,31 @@ function App() {
             </div>
             
             <div className="editor-wrapper" style={editorStyle}>
-              <MDEditor value={content} onChange={handleContentChange}
-                height="100%" preview={isEditableFile(selectedNote.id) ? "live" : "preview"}
-                hideToolbar={!isEditableFile(selectedNote.id)} previewOptions={{ rehypePlugins: [rehypeRaw] }} />
+              <MDEditor 
+                value={content} 
+                onChange={handleContentChange}
+                height="100%" 
+                preview={isEditableFile(selectedNote.id) ? "live" : "preview"}
+                hideToolbar={!isEditableFile(selectedNote.id)} 
+                previewOptions={{ rehypePlugins: [rehypeRaw] }}
+                commands={[
+                  commands.bold,
+                  commands.italic,
+                  commands.strikethrough,
+                  commands.hr,
+                  commands.divider,
+                  commands.link,
+                  imageCommand,
+                  commands.divider,
+                  commands.unorderedListCommand,
+                  commands.orderedListCommand,
+                  commands.checkedListCommand,
+                  commands.divider,
+                  commands.code,
+                  commands.codeBlock,
+                  commands.quote,
+                ]}
+              />
             </div>
             
             {/* Status bar */}
@@ -1425,6 +1804,7 @@ function App() {
       {showSearch && <SearchModal />}
       {showSettings && <SettingsModal />}
       {customizingNotebook && <NotebookCustomizeModal />}
+      {contextMenu && <NotebookContextMenu />}
     </div>
   );
 }

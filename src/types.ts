@@ -29,6 +29,7 @@ export interface AppSettings {
   favorites: string[];
   tags: Record<string, string[]>;
   notebook_styles: Record<string, NotebookStyle>;
+  pinned_folders: string[];
 }
 
 export interface NotebookStyle {
