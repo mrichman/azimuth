@@ -2071,7 +2071,7 @@ function App() {
                     }}
                   >
                     {favorites.includes(`${note.folder}/${note.id}`) && '⭐ '}
-                    {getFileIcon(note.id)} {note.title || 'Untitled'}
+                    {getFileIcon(note.id)} {note.id}
                   </li>
                 )
               ))}
