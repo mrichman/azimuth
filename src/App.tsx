@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { watch } from '@tauri-apps/plugin-fs';
 import MDEditor, { commands } from '@uiw/react-md-editor';
 import { v4 as uuidv4 } from 'uuid';
@@ -93,6 +94,13 @@ function App() {
   useEffect(() => { selectedNotebookRef.current = selectedNotebook; }, [selectedNotebook]);
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
+  
+  // Update window title with root directory
+  useEffect(() => {
+    if (notesDir) {
+      getCurrentWindow().setTitle(`Azimuth - ${notesDir}`);
+    }
+  }, [notesDir]);
   
   // Clean up auto-save timer on unmount
   useEffect(() => {
@@ -1964,6 +1972,13 @@ function App() {
             </div>
           )}
           <ul>
+            <li 
+              className={`notebook-item ${selectedNotebook === null ? 'selected' : ''}`}
+              onClick={() => setSelectedNotebook(null)}
+            >
+              <span className="notebook-icon">📂</span>
+              <span className="notebook-name">/</span>
+            </li>
             {notebooks.map((nb) => renderNotebookItem(nb, 0))}
           </ul>
         </div>
@@ -1974,7 +1989,7 @@ function App() {
         <aside className="notes-sidebar" style={{ width: notesWidth }}>
           <div className="notes-list">
             <div className="section-header">
-              <span>{selectedNotebook ? 'Notes' : 'Root Files'}</span>
+              <span>{selectedNotebook ? 'Notes' : '/'}</span>
               <button onClick={createNote}>+</button>
             </div>
             <div className="sort-controls">
