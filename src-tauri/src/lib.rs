@@ -492,7 +492,7 @@ fn list_notes(notebook_path: String) -> Result<Vec<Note>, String> {
                 format!("<audio controls style=\"width: 100%;\">\n  <source src=\"{}\" type=\"audio/{}\">\n  Your browser does not support the audio tag.\n</audio>", asset_url, get_audio_mime(&extension))
             } else if extension == "pdf" {
                 let asset_url = format!("asset://localhost/{}", file_path.to_string_lossy().replace(" ", "%20"));
-                format!("<iframe src=\"{}\" width=\"100%\" height=\"800px\" style=\"border: none;\"></iframe>", asset_url)
+                format!("<iframe src=\"{}\" style=\"width: 100%; height: 60vh; border: none;\"></iframe>", asset_url)
             } else {
                 let asset_url = format!("asset://localhost/{}", file_path.to_string_lossy().replace(" ", "%20"));
                 format!("[📎 {}]({})", file_name, asset_url)

@@ -3,7 +3,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { watch } from '@tauri-apps/plugin-fs';
 import MDEditor, { commands } from '@uiw/react-md-editor';
-import rehypeRaw from 'rehype-raw';
 import { v4 as uuidv4 } from 'uuid';
 import { renderAsync } from 'docx-preview';
 import * as XLSX from 'xlsx';
@@ -643,9 +642,24 @@ function App() {
     }
   }, []);
 
+  // Load notes for selected notebook, or root directory if none selected
   useEffect(() => {
-    if (selectedNotebook) loadNotes(selectedNotebook);
-  }, [selectedNotebook, loadNotes]);
+    if (selectedNotebook) {
+      loadNotes(selectedNotebook);
+    } else if (notesDir) {
+      // Load root directory files when no notebook is selected
+      const loadRootNotes = async () => {
+        try {
+          const notesList = await invoke<Note[]>('list_notes', { notebookPath: notesDir });
+          setNotes(notesList);
+        } catch (e) {
+          console.error('Failed to load root notes:', e);
+          setNotes([]);
+        }
+      };
+      loadRootNotes();
+    }
+  }, [selectedNotebook, notesDir, loadNotes]);
 
   // Load note tags when note is selected
   useEffect(() => {
@@ -995,18 +1009,19 @@ function App() {
   };
 
   const createNote = async () => {
-    if (!selectedNotebook) return;
+    const notebookPath = selectedNotebook?.path || notesDir;
+    if (!notebookPath) return;
     const noteId = `${uuidv4()}.md`;
     const newNote: Note = {
       id: noteId,
       title: 'Untitled',
       content: '# New Note\n\nStart writing...',
-      folder: selectedNotebook.path,
+      folder: notebookPath,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
     try {
-      await invoke('save_note', { notebookPath: selectedNotebook.path, noteId, content: newNote.content });
+      await invoke('save_note', { notebookPath, noteId, content: newNote.content });
       setNotes([...notes, newNote]);
       openNoteInTab(newNote);
     } catch (e) {
@@ -1032,6 +1047,19 @@ function App() {
       'makefile', 'cmake', 'gradle', 'properties',
     ];
     return textExtensions.includes(ext) || !noteId.includes('.');
+  };
+
+  const isPdfFile = (noteId: string, noteContent?: string) => {
+    const ext = noteId.split('.').pop()?.toLowerCase() || '';
+    // Check extension
+    if (ext === 'pdf') return true;
+    // Check if filename contains 'pdf' (for files like meal_plan_pdf without extension)
+    if (noteId.toLowerCase().includes('pdf')) return true;
+    // Fallback: check if content contains an iframe with asset:// (PDF from backend)
+    if (noteContent && noteContent.includes('<iframe') && noteContent.includes('asset://')) {
+      return true;
+    }
+    return false;
   };
 
   const isDocxFile = (noteId: string) => {
@@ -1156,17 +1184,18 @@ function App() {
   }, [excelWorkbook, activeSheet]);
 
   const saveNote = async () => {
-    if (!selectedNote || !selectedNotebook) return;
+    const notebookPath = selectedNotebook?.path || notesDir;
+    if (!selectedNote || !notebookPath) return;
     setIsSaving(true);
     setSaveIndicator('saving');
     try {
-      await invoke('save_note', { notebookPath: selectedNotebook.path, noteId: selectedNote.id, content });
+      await invoke('save_note', { notebookPath, noteId: selectedNote.id, content });
       const title = content.split('\n')[0].replace(/^#\s*/, '') || 'Untitled';
       const updatedNote = { ...selectedNote, content, title, updated_at: new Date().toISOString() };
       setSelectedNote(updatedNote);
       
       // Refresh the notes list to pick up any new files (e.g., pasted images)
-      const notesList = await invoke<Note[]>('list_notes', { notebookPath: selectedNotebook.path });
+      const notesList = await invoke<Note[]>('list_notes', { notebookPath });
       setNotes(notesList);
       
       // Update tab to mark as not dirty
@@ -1184,10 +1213,11 @@ function App() {
   };
 
   const deleteNote = async () => {
-    if (!selectedNote || !selectedNotebook) return;
+    const notebookPath = selectedNotebook?.path || notesDir;
+    if (!selectedNote || !notebookPath) return;
     if (!confirm('Delete this note?')) return;
     try {
-      await invoke('delete_note', { notebookPath: selectedNotebook.path, noteId: selectedNote.id });
+      await invoke('delete_note', { notebookPath, noteId: selectedNote.id });
       setNotes(notes.filter(n => n.id !== selectedNote.id));
       // Close the tab for deleted note
       closeTab(selectedNote.id);
@@ -1940,11 +1970,11 @@ function App() {
         <div className="resize-handle" onMouseDown={() => setIsResizingSidebar(true)} />
       </aside>
       
-      {selectedNotebook && (
+      {(selectedNotebook || notesDir) && (
         <aside className="notes-sidebar" style={{ width: notesWidth }}>
           <div className="notes-list">
             <div className="section-header">
-              <span>Notes</span>
+              <span>{selectedNotebook ? 'Notes' : 'Root Files'}</span>
               <button onClick={createNote}>+</button>
             </div>
             <div className="sort-controls">
@@ -1974,15 +2004,17 @@ function App() {
                       value={renameValue}
                       onChange={e => setRenameValue(e.target.value)}
                       onKeyDown={async e => {
-                        if (e.key === 'Enter' && renameValue.trim() && selectedNotebook) {
+                        if (e.key === 'Enter' && renameValue.trim()) {
+                          const notebookPath = selectedNotebook?.path || notesDir;
+                          if (!notebookPath) return;
                           try {
                             await invoke('rename_note', { 
-                              notebookPath: selectedNotebook.path, 
+                              notebookPath, 
                               oldId: note.id, 
                               newId: renameValue.trim() 
                             });
                             // Refresh notes list
-                            const notesList = await invoke<Note[]>('list_notes', { notebookPath: selectedNotebook.path });
+                            const notesList = await invoke<Note[]>('list_notes', { notebookPath });
                             setNotes(notesList);
                             // Update selected note if it was renamed
                             if (selectedNote?.id === note.id) {
@@ -2088,7 +2120,14 @@ function App() {
             </div>
             
             <div className="editor-wrapper" style={editorStyle}>
-              {isOfficeFile(selectedNote.id) ? (
+              {isPdfFile(selectedNote.id, selectedNote.content) ? (
+                <div className="pdf-preview-container">
+                  <iframe 
+                    src={`asset://localhost/${encodeURI(selectedNote.folder)}/${encodeURI(selectedNote.id)}`}
+                    title="PDF Preview"
+                  />
+                </div>
+              ) : isOfficeFile(selectedNote.id) ? (
                 <div className="office-preview-container">
                   {officeLoading && (
                     <div className="office-loading">
@@ -2116,9 +2155,10 @@ function App() {
                   value={content} 
                   onChange={handleContentChange}
                   height="100%" 
+                  visibleDragbar={false}
                   preview={isEditableFile(selectedNote.id) ? "live" : "preview"}
                   hideToolbar={!isEditableFile(selectedNote.id)} 
-                  previewOptions={{ rehypePlugins: [rehypeRaw] }}
+                  previewOptions={{}}
                   commands={[
                     commands.bold,
                     commands.italic,

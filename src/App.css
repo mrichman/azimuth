@@ -4,6 +4,17 @@
   box-sizing: border-box;
 }
 
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Prevent iframes from breaking layout */
+iframe {
+  max-width: 100%;
+  max-height: 70vh;
+}
+
 :root {
   --bg-primary: #1e1e2e;
   --bg-secondary: #181825;
@@ -26,7 +37,7 @@ body {
 
 .app {
   display: flex;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -395,6 +406,8 @@ body {
   flex-direction: column;
   background: var(--bg-primary);
   overflow: hidden;
+  min-height: 0;
+  min-width: 0;
 }
 
 /* Tabs */
@@ -490,13 +503,38 @@ body {
 }
 
 .editor-wrapper {
-  flex: 1;
+  flex: 1 1 0;
   overflow: hidden;
   min-height: 0;
+  position: relative;
+}
+
+.editor-wrapper > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .editor-wrapper .w-md-editor {
   height: 100% !important;
+}
+
+.editor-wrapper .w-md-editor-content {
+  height: calc(100% - 29px) !important;
+}
+
+.editor-wrapper .w-md-editor-preview {
+  height: 100% !important;
+  overflow: auto !important;
+}
+
+/* Constrain iframes in markdown preview */
+.editor-wrapper iframe {
+  max-height: 60vh;
+  width: 100%;
+  border: none;
 }
 
 /* Hide the resize handle - we manage height ourselves */
@@ -1178,6 +1216,12 @@ body {
 
 .w-md-editor-content {
   background: var(--bg-primary) !important;
+  overflow: auto !important;
+}
+
+.w-md-editor-content iframe {
+  max-height: 500px !important;
+  height: 500px !important;
 }
 
 .w-md-editor-text-pre, .w-md-editor-text-input, .w-md-editor-text {
@@ -1187,6 +1231,12 @@ body {
 .wmde-markdown {
   background: var(--bg-primary) !important;
   color: var(--text-primary) !important;
+  overflow: auto !important;
+}
+
+.wmde-markdown iframe {
+  max-height: 500px;
+  display: block;
 }
 
 .wmde-markdown pre {
@@ -1348,4 +1398,24 @@ body {
   text-align: center;
   color: var(--danger);
   font-size: 14px;
+}
+
+
+/* PDF Preview */
+.pdf-preview-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pdf-preview-container iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  max-height: none;
+  border: none;
 }
