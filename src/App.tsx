@@ -5,6 +5,8 @@ import { watch } from '@tauri-apps/plugin-fs';
 import MDEditor, { commands } from '@uiw/react-md-editor';
 import rehypeRaw from 'rehype-raw';
 import { v4 as uuidv4 } from 'uuid';
+import { renderAsync } from 'docx-preview';
+import * as XLSX from 'xlsx';
 import { Note, Notebook, SyncConfig, AppSettings, SearchResult, SyncStatus, OpenTab, NotebookStyle } from './types';
 import './App.css';
 
@@ -123,21 +125,30 @@ function App() {
     const tab = openTabs.find(t => t.note.id === noteId);
     if (tab?.isDirty && !confirm('This note has unsaved changes. Close anyway?')) return;
     
-    const newTabs = openTabs.filter(t => t.note.id !== noteId);
-    setOpenTabs(newTabs);
-    
-    if (activeTabId === noteId) {
-      if (newTabs.length > 0) {
-        const lastTab = newTabs[newTabs.length - 1];
-        setActiveTabId(lastTab.note.id);
-        setSelectedNote(lastTab.note);
-        setContent(lastTab.content);
-      } else {
-        setActiveTabId(null);
-        setSelectedNote(null);
-        setContent('');
+    setOpenTabs(prev => {
+      const newTabs = prev.filter(t => t.note.id !== noteId);
+      
+      // Handle switching to another tab if we're closing the active one
+      if (activeTabId === noteId) {
+        if (newTabs.length > 0) {
+          const lastTab = newTabs[newTabs.length - 1];
+          // Use setTimeout to avoid state update conflicts
+          setTimeout(() => {
+            setActiveTabId(lastTab.note.id);
+            setSelectedNote(lastTab.note);
+            setContent(lastTab.content);
+          }, 0);
+        } else {
+          setTimeout(() => {
+            setActiveTabId(null);
+            setSelectedNote(null);
+            setContent('');
+          }, 0);
+        }
       }
-    }
+      
+      return newTabs;
+    });
   };
 
   const switchTab = (noteId: string) => {
@@ -181,6 +192,18 @@ function App() {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Abbreviate path: /Users/john/Documents/notes/work -> /U/j/D/n/work
+  // Keeps the last directory and filename full, abbreviates intermediate ones
+  const abbreviatePath = (fullPath: string): string => {
+    const parts = fullPath.split('/');
+    if (parts.length <= 3) return fullPath;
+    
+    // Keep last 2 parts full (parent folder + filename), abbreviate the rest
+    const abbreviated = parts.slice(0, -2).map(p => p ? p[0] : '');
+    const kept = parts.slice(-2);
+    return [...abbreviated, ...kept].join('/');
   };
 
   // Shortcut command expansion
@@ -299,6 +322,15 @@ function App() {
     
     // PDF
     if (ext === 'pdf') return '📕';
+    
+    // Word documents
+    if (['docx', 'doc'].includes(ext)) return '📘';
+    
+    // Excel spreadsheets
+    if (['xlsx', 'xls', 'xlsm', 'xlsb'].includes(ext)) return '📊';
+    
+    // PowerPoint presentations
+    if (['pptx', 'ppt'].includes(ext)) return '📙';
     
     // Code - JavaScript/TypeScript
     if (['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs'].includes(ext)) return '🟨';
@@ -667,6 +699,47 @@ function App() {
     return null;
   };
 
+  // Expand all parent folders in the path to a notebook
+  const expandPathToNotebook = async (targetPath: string) => {
+    if (!notesDir) return;
+    
+    // Get the relative path from notesDir
+    const relativePath = targetPath.startsWith(notesDir) 
+      ? targetPath.slice(notesDir.length + 1) 
+      : targetPath;
+    
+    // Split into path segments
+    const segments = relativePath.split('/').filter(Boolean);
+    
+    // Build up each parent path and expand it
+    let currentPath = notesDir;
+    const foldersToExpand: string[] = [];
+    
+    for (let i = 0; i < segments.length; i++) {
+      currentPath = `${currentPath}/${segments[i]}`;
+      const notebook = findNotebookByPath(notebooks, currentPath);
+      if (notebook) {
+        foldersToExpand.push(notebook.id);
+        // Load children if not already loaded
+        if (!hasRealChildren(notebook) && isExpandable(notebook)) {
+          try {
+            const children = await invoke<Notebook[]>('list_notebooks', { basePath: notebook.path });
+            setNotebooks(prev => updateNotebookChildren(prev, notebook.path, children));
+          } catch (e) {
+            console.error('Failed to load children:', e);
+          }
+        }
+      }
+    }
+    
+    // Expand all folders in the path
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      foldersToExpand.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
   // Favorites
   const toggleFavorite = async () => {
     if (!selectedNote || !notesDir) return;
@@ -960,6 +1033,127 @@ function App() {
     ];
     return textExtensions.includes(ext) || !noteId.includes('.');
   };
+
+  const isDocxFile = (noteId: string) => {
+    const ext = noteId.split('.').pop()?.toLowerCase() || '';
+    return ext === 'docx';
+  };
+
+  const isExcelFile = (noteId: string) => {
+    const ext = noteId.split('.').pop()?.toLowerCase() || '';
+    return ['xlsx', 'xls', 'xlsm', 'xlsb'].includes(ext);
+  };
+
+  const isPptxFile = (noteId: string) => {
+    const ext = noteId.split('.').pop()?.toLowerCase() || '';
+    return ['pptx', 'ppt'].includes(ext);
+  };
+
+  const isOfficeFile = (noteId: string) => isDocxFile(noteId) || isExcelFile(noteId) || isPptxFile(noteId);
+
+  // Office preview refs and state
+  const officeContainerRef = useRef<HTMLDivElement>(null);
+  const [officeLoading, setOfficeLoading] = useState(false);
+  const [excelSheets, setExcelSheets] = useState<string[]>([]);
+  const [activeSheet, setActiveSheet] = useState<string>('');
+  const [excelWorkbook, setExcelWorkbook] = useState<XLSX.WorkBook | null>(null);
+
+  // Load office file preview when selected
+  useEffect(() => {
+    const loadOfficePreview = async () => {
+      if (!selectedNote || !officeContainerRef.current) return;
+      
+      const noteId = selectedNote.id;
+      if (!isOfficeFile(noteId)) return;
+      
+      setOfficeLoading(true);
+      setExcelSheets([]);
+      setActiveSheet('');
+      setExcelWorkbook(null);
+      
+      try {
+        const filePath = `${selectedNote.folder}/${selectedNote.id}`;
+        const fileBytes = await invoke<number[]>('read_file_binary', { filePath });
+        const uint8Array = new Uint8Array(fileBytes);
+        
+        officeContainerRef.current.innerHTML = '';
+        
+        if (isDocxFile(noteId)) {
+          const blob = new Blob([uint8Array], { 
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+          });
+          await renderAsync(blob, officeContainerRef.current, undefined, {
+            className: 'docx-preview-content',
+            inWrapper: false,
+            ignoreWidth: true,
+            ignoreHeight: true,
+            ignoreFonts: true,
+            breakPages: false,
+            ignoreLastRenderedPageBreak: true,
+            experimental: false,
+            trimXmlDeclaration: true,
+            useBase64URL: false,
+            renderHeaders: false,
+            renderFooters: false,
+            renderFootnotes: false,
+            renderEndnotes: false,
+          });
+        } else if (isExcelFile(noteId)) {
+          const workbook = XLSX.read(uint8Array, { type: 'array' });
+          setExcelWorkbook(workbook);
+          setExcelSheets(workbook.SheetNames);
+          setActiveSheet(workbook.SheetNames[0] || '');
+        } else if (isPptxFile(noteId)) {
+          // Basic PPTX parsing - extract text content from slides
+          const JSZip = (await import('jszip')).default;
+          const zip = await JSZip.loadAsync(uint8Array);
+          
+          const slides: { num: number; content: string }[] = [];
+          const slideFiles = Object.keys(zip.files)
+            .filter(f => f.match(/ppt\/slides\/slide\d+\.xml$/))
+            .sort((a, b) => {
+              const numA = parseInt(a.match(/slide(\d+)/)?.[1] || '0');
+              const numB = parseInt(b.match(/slide(\d+)/)?.[1] || '0');
+              return numA - numB;
+            });
+          
+          for (const slideFile of slideFiles) {
+            const content = await zip.files[slideFile].async('text');
+            // Extract text from XML
+            const textMatches = content.match(/<a:t>([^<]*)<\/a:t>/g) || [];
+            const texts = textMatches.map(m => m.replace(/<\/?a:t>/g, '')).filter(t => t.trim());
+            const slideNum = parseInt(slideFile.match(/slide(\d+)/)?.[1] || '0');
+            slides.push({ num: slideNum, content: texts.join('\n') });
+          }
+          
+          officeContainerRef.current.innerHTML = slides.map(s => `
+            <div class="pptx-slide">
+              <div class="pptx-slide-header">Slide ${s.num}</div>
+              <div class="pptx-slide-content">${s.content.split('\n').map(l => `<p>${l}</p>`).join('')}</div>
+            </div>
+          `).join('') || '<div class="office-empty">No slides found</div>';
+        }
+      } catch (e) {
+        console.error('Failed to load office preview:', e);
+        if (officeContainerRef.current) {
+          officeContainerRef.current.innerHTML = `<div class="office-error">Failed to load preview: ${e}</div>`;
+        }
+      } finally {
+        setOfficeLoading(false);
+      }
+    };
+    
+    loadOfficePreview();
+  }, [selectedNote]);
+
+  // Render Excel sheet when active sheet changes
+  useEffect(() => {
+    if (!excelWorkbook || !activeSheet || !officeContainerRef.current) return;
+    
+    const worksheet = excelWorkbook.Sheets[activeSheet];
+    const html = XLSX.utils.sheet_to_html(worksheet, { editable: false });
+    officeContainerRef.current.innerHTML = html;
+  }, [excelWorkbook, activeSheet]);
 
   const saveNote = async () => {
     if (!selectedNote || !selectedNotebook) return;
@@ -1656,19 +1850,18 @@ function App() {
                   <li 
                     key={`note-${fav}`} 
                     onClick={async () => {
-                      console.log('Clicked favorite note:', { fav, noteId, notebookPath });
+                      // Expand the directory tree to show the notebook
+                      await expandPathToNotebook(notebookPath);
+                      
                       const notebook = findNotebookByPath(notebooks, notebookPath);
-                      console.log('Found notebook:', notebook);
                       if (notebook) {
                         setSelectedNotebook(notebook);
                         const notesList = await invoke<Note[]>('list_notes', { notebookPath });
                         setNotes(notesList);
                         const note = notesList.find(n => n.id === noteId);
-                        console.log('Found note:', note);
                         if (note) { openNoteInTab(note); }
                       } else {
                         // Notebook not found in tree - try loading notes directly
-                        console.log('Notebook not in tree, loading directly');
                         try {
                           const notesList = await invoke<Note[]>('list_notes', { notebookPath });
                           setNotes(notesList);
@@ -1895,35 +2088,64 @@ function App() {
             </div>
             
             <div className="editor-wrapper" style={editorStyle}>
-              <MDEditor 
-                value={content} 
-                onChange={handleContentChange}
-                height="100%" 
-                preview={isEditableFile(selectedNote.id) ? "live" : "preview"}
-                hideToolbar={!isEditableFile(selectedNote.id)} 
-                previewOptions={{ rehypePlugins: [rehypeRaw] }}
-                commands={[
-                  commands.bold,
-                  commands.italic,
-                  commands.strikethrough,
-                  commands.hr,
-                  commands.divider,
-                  commands.link,
-                  imageCommand,
-                  commands.divider,
-                  commands.unorderedListCommand,
-                  commands.orderedListCommand,
-                  commands.checkedListCommand,
-                  commands.divider,
-                  commands.code,
-                  commands.codeBlock,
-                  commands.quote,
-                ]}
-              />
+              {isOfficeFile(selectedNote.id) ? (
+                <div className="office-preview-container">
+                  {officeLoading && (
+                    <div className="office-loading">
+                      <div className="loading-spinner" />
+                      <span>Loading document...</span>
+                    </div>
+                  )}
+                  {isExcelFile(selectedNote.id) && excelSheets.length > 1 && !officeLoading && (
+                    <div className="excel-sheet-tabs">
+                      {excelSheets.map(sheet => (
+                        <button 
+                          key={sheet} 
+                          className={`sheet-tab ${activeSheet === sheet ? 'active' : ''}`}
+                          onClick={() => setActiveSheet(sheet)}
+                        >
+                          {sheet}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div ref={officeContainerRef} style={{ display: officeLoading ? 'none' : 'block' }} />
+                </div>
+              ) : (
+                <MDEditor 
+                  value={content} 
+                  onChange={handleContentChange}
+                  height="100%" 
+                  preview={isEditableFile(selectedNote.id) ? "live" : "preview"}
+                  hideToolbar={!isEditableFile(selectedNote.id)} 
+                  previewOptions={{ rehypePlugins: [rehypeRaw] }}
+                  commands={[
+                    commands.bold,
+                    commands.italic,
+                    commands.strikethrough,
+                    commands.hr,
+                    commands.divider,
+                    commands.link,
+                    imageCommand,
+                    commands.divider,
+                    commands.unorderedListCommand,
+                    commands.orderedListCommand,
+                    commands.checkedListCommand,
+                    commands.divider,
+                    commands.code,
+                    commands.codeBlock,
+                    commands.quote,
+                  ]}
+                />
+              )}
             </div>
             
             {/* Status bar */}
             <div className="status-bar">
+              <span className="status-item file-path" title={`${selectedNote.folder}/${selectedNote.id}`}>
+                {abbreviatePath(`${selectedNote.folder}/${selectedNote.id}`)}
+              </span>
+              <span className="status-spacer" />
               <span className="status-item">Words: {getWordCount(content)}</span>
               <span className="status-item">Characters: {getCharCount(content)}</span>
               <span className="status-item">Size: {formatFileSize(new Blob([content]).size)}</span>

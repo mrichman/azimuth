@@ -73,7 +73,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
+  cursor: default;
   user-select: none;
 }
 
@@ -129,7 +129,7 @@ body {
   background: none;
   border: none;
   font-size: 12px;
-  cursor: pointer;
+  cursor: default;
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -157,7 +157,7 @@ body {
   width: 18px;
   height: 18px;
   border-radius: 3px;
-  cursor: pointer;
+  cursor: default;
   font-size: 12px;
   display: flex;
   align-items: center;
@@ -196,7 +196,7 @@ body {
 .favorites-section li {
   padding: 6px 12px;
   font-size: 11px;
-  cursor: pointer;
+  cursor: default;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -234,7 +234,7 @@ body {
   border-radius: 4px;
   color: var(--text-primary);
   font-size: 10px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .sort-order-btn {
@@ -244,7 +244,7 @@ body {
   border-radius: 4px;
   color: var(--text-primary);
   font-size: 12px;
-  cursor: pointer;
+  cursor: default;
   min-width: 28px;
 }
 
@@ -258,7 +258,7 @@ body {
 
 .notebooks li, .notes-list li {
   padding: 6px 10px;
-  cursor: pointer;
+  cursor: default;
   border-left: 2px solid transparent;
   transition: background 0.15s ease, border-color 0.15s ease;
   display: flex;
@@ -270,11 +270,11 @@ body {
 }
 
 .notebooks li.notebook-item {
-  cursor: grab;
+  cursor: default;
 }
 
 .notebooks li.notebook-item:active {
-  cursor: grabbing;
+  cursor: default;
 }
 
 .notebook-icon, .notebook-name {
@@ -325,7 +325,7 @@ body {
 .folder-toggle {
   font-size: 8px;
   width: 12px;
-  cursor: pointer;
+  cursor: default;
   opacity: 0.7;
   flex-shrink: 0;
   display: inline-flex;
@@ -385,7 +385,7 @@ body {
   color: var(--bg-tertiary);
   border: none;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
   font-size: 11px;
 }
 
@@ -417,7 +417,7 @@ body {
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border-right: 1px solid var(--border);
-  cursor: pointer;
+  cursor: default;
   min-width: 120px;
   max-width: 200px;
   transition: background 0.15s;
@@ -454,7 +454,7 @@ body {
   background: none;
   border: none;
   color: var(--text-secondary);
-  cursor: pointer;
+  cursor: default;
   font-size: 14px;
   padding: 0 2px;
   line-height: 1;
@@ -478,6 +478,15 @@ body {
   color: var(--text-secondary);
   flex-shrink: 0;
   min-height: 28px;
+}
+
+.status-bar .file-path {
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  cursor: default;
 }
 
 .editor-wrapper {
@@ -545,7 +554,7 @@ body {
   padding: 6px 12px;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
   font-size: 12px;
   transition: all 0.15s ease;
   background: var(--bg-tertiary);
@@ -612,7 +621,7 @@ body {
   background: none;
   border: none;
   color: var(--bg-tertiary);
-  cursor: pointer;
+  cursor: default;
   font-size: 12px;
   padding: 0;
   line-height: 1;
@@ -635,7 +644,7 @@ body {
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 11px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .add-tag-btn:hover {
@@ -761,7 +770,7 @@ body {
 
 .search-result {
   padding: 12px 16px;
-  cursor: pointer;
+  cursor: default;
   border-bottom: 1px solid var(--border);
 }
 
@@ -844,7 +853,7 @@ body {
   border: none;
   border-radius: 4px;
   color: var(--bg-primary);
-  cursor: pointer;
+  cursor: default;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -860,7 +869,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-primary);
-  cursor: pointer;
+  cursor: default;
   text-align: left;
 }
 
@@ -882,7 +891,7 @@ body {
   border: 1px solid var(--border);
   color: var(--text-primary);
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .sync-options button:hover {
@@ -902,7 +911,7 @@ body {
   color: var(--bg-tertiary);
   border: none;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
   margin-top: 8px;
 }
 
@@ -936,7 +945,7 @@ body {
   color: var(--bg-tertiary);
   border: none;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
   margin-top: 8px;
 }
 
@@ -954,7 +963,7 @@ body {
   color: var(--text-primary);
   border: none;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .close-btn:hover {
@@ -1075,7 +1084,7 @@ body {
   color: var(--text-primary);
   font-size: 12px;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   border-radius: 4px;
 }
 
@@ -1109,7 +1118,7 @@ body {
   background: var(--bg-tertiary);
   border: 2px solid transparent;
   border-radius: 6px;
-  cursor: pointer;
+  cursor: default;
   font-size: 16px;
   transition: all 0.15s;
 }
@@ -1134,7 +1143,7 @@ body {
   height: 28px;
   border: 2px solid transparent;
   border-radius: 50%;
-  cursor: pointer;
+  cursor: default;
   transition: all 0.15s;
 }
 
@@ -1205,4 +1214,138 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+
+/* Office Preview (Word, Excel, PowerPoint) */
+.office-preview-container {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background: white;
+  display: flex;
+  flex-direction: column;
+}
+
+.office-preview-container > div:last-child {
+  flex: 1;
+  padding: 20px;
+  overflow: auto;
+}
+
+.office-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--text-secondary);
+}
+
+.office-error, .office-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.office-error {
+  color: var(--danger);
+}
+
+/* Excel sheet tabs */
+.excel-sheet-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px;
+  background: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.sheet-tab {
+  padding: 6px 16px;
+  background: #e0e0e0;
+  border: 1px solid #ccc;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  font-size: 12px;
+  color: #333;
+  white-space: nowrap;
+}
+
+.sheet-tab.active {
+  background: white;
+  border-bottom: 1px solid white;
+  margin-bottom: -1px;
+}
+
+/* Excel table styling */
+.office-preview-container table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 100%;
+}
+
+.office-preview-container th,
+.office-preview-container td {
+  border: 1px solid #ddd;
+  padding: 6px 10px;
+  text-align: left;
+  color: #333;
+}
+
+.office-preview-container th {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+
+.office-preview-container tr:hover td {
+  background: #f9f9f9;
+}
+
+/* PowerPoint slides */
+.pptx-slide {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.pptx-slide-header {
+  padding: 8px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  font-weight: 600;
+  font-size: 12px;
+  color: #666;
+}
+
+.pptx-slide-content {
+  padding: 20px;
+  min-height: 100px;
+  color: #333;
+}
+
+.pptx-slide-content p {
+  margin: 8px 0;
+}
+
+/* Legacy docx class support */
+.docx-preview-container {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background: white;
+  padding: 20px;
+}
+
+.docx-error {
+  padding: 40px;
+  text-align: center;
+  color: var(--danger);
+  font-size: 14px;
 }

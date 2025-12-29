@@ -620,6 +620,12 @@ fn read_note(notebook_path: String, note_id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn read_file_binary(file_path: String) -> Result<Vec<u8>, String> {
+    let path = PathBuf::from(&file_path);
+    fs::read(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn save_attachment(notebook_path: String, _note_id: String, file_name: String, data: String) -> Result<String, String> {
     // Save attachment directly in the notebook folder (adjacent to notes)
     let notebook_dir = PathBuf::from(&notebook_path);
@@ -1328,6 +1334,7 @@ pub fn run() {
             delete_note,
             rename_note,
             read_note,
+            read_file_binary,
             save_attachment,
             get_attachment_path,
             list_attachments,
