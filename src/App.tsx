@@ -643,6 +643,7 @@ function App() {
     };
     
     const handleMouseUp = () => {
+      document.body.classList.remove('resizing');
       if (isResizingSidebar || isResizingNotes) {
         setIsResizingSidebar(false);
         setIsResizingNotes(false);
@@ -661,6 +662,7 @@ function App() {
     };
     
     if (isResizingSidebar || isResizingNotes || isResizingEditor) {
+      document.body.classList.add('resizing');
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     }
