@@ -25,8 +25,11 @@ function App() {
   
   // Tabs state
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);  const [showNewNotebook, setShowNewNotebook] = useState(false);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [showNewNotebook, setShowNewNotebook] = useState(false);
   const [newNotebookName, setNewNotebookName] = useState('');
+  const [showNewNote, setShowNewNote] = useState(false);
+  const [newNoteName, setNewNoteName] = useState('');
   const [syncConfig, setSyncConfig] = useState<SyncConfig | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveIndicator, setSaveIndicator] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -1077,12 +1080,16 @@ function App() {
 
   const createNote = async () => {
     const notebookPath = selectedNotebook?.path || notesDir;
-    if (!notebookPath) return;
-    const noteId = `${uuidv4()}.md`;
+    if (!notebookPath || !newNoteName.trim()) return;
+    
+    // Sanitize filename: remove invalid characters
+    const safeName = newNoteName.trim().replace(/[<>:"/\\|?*]/g, '-');
+    const noteId = `${safeName}.md`;
+    
     const newNote: Note = {
       id: noteId,
-      title: 'Untitled',
-      content: '# New Note\n\nStart writing...',
+      title: safeName,
+      content: `# ${safeName}\n\n`,
       folder: notebookPath,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -1091,6 +1098,8 @@ function App() {
       await invoke('save_note', { notebookPath, noteId, content: newNote.content });
       setNotes([...notes, newNote]);
       openNoteInTab(newNote);
+      setNewNoteName('');
+      setShowNewNote(false);
     } catch (e) {
       console.error('Failed to create note:', e);
     }
@@ -2076,8 +2085,23 @@ function App() {
           <div className="notes-list">
             <div className="section-header">
               <span>{selectedNotebook ? 'Notes' : '/'}</span>
-              <button onClick={createNote}>+</button>
+              <button onClick={() => setShowNewNote(true)}>+</button>
             </div>
+            {showNewNote && (
+              <div className="new-notebook">
+                <input 
+                  value={newNoteName} 
+                  onChange={e => setNewNoteName(e.target.value)}
+                  placeholder="Note name" 
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') createNote();
+                    if (e.key === 'Escape') { setShowNewNote(false); setNewNoteName(''); }
+                  }}
+                  autoFocus
+                />
+                <button onClick={createNote}>Create</button>
+              </div>
+            )}
             <div className="sort-controls">
               <select 
                 value={sortBy} 
@@ -2297,8 +2321,8 @@ function App() {
         ) : (
           <div className="empty-state">
             <h2>Select or create a note</h2>
-            <p>Choose a notebook and note from the sidebar, or create a new one.</p>
-            <p className="hint">💡 Press Cmd+K to search all notes</p>
+            <p>Select a folder on the left, then click the + button in the Notes section to create a new note.</p>
+            <p className="hint">💡 Notes are saved as files in: {notesDir}</p>
           </div>
         )}
       </main>
