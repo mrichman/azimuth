@@ -9,6 +9,16 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Prevent text selection during resize operations */
+body.resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+body.resizing * {
+  cursor: col-resize !important;
+}
+
 /* Prevent iframes from breaking layout */
 iframe {
   max-width: 100%;
@@ -535,6 +545,40 @@ body {
 .editor-wrapper .w-md-editor-preview {
   height: 100% !important;
   overflow: auto !important;
+}
+
+/* Vertical splitter between editor and preview panes */
+.editor-wrapper .w-md-editor-content {
+  position: relative;
+}
+
+/* Apply custom split ratio */
+.editor-wrapper .w-md-editor-area {
+  width: var(--editor-split-ratio, 50%) !important;
+  border-right: 1px solid var(--border) !important;
+}
+
+.editor-wrapper .w-md-editor-preview {
+  width: calc(100% - var(--editor-split-ratio, 50%)) !important;
+}
+
+/* Editor split resize handle */
+.editor-split-handle {
+  position: absolute;
+  left: var(--editor-split-ratio, 50%);
+  top: 29px; /* Below toolbar */
+  bottom: 0;
+  width: 6px;
+  margin-left: -3px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 100;
+  transition: background 0.15s;
+}
+
+.editor-split-handle:hover,
+.editor-split-handle:active {
+  background: var(--accent);
 }
 
 /* Constrain iframes in markdown preview */

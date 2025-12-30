@@ -88,6 +88,9 @@ function App() {
   const [notesWidth, setNotesWidth] = useState(200);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [isResizingNotes, setIsResizingNotes] = useState(false);
+  const [editorSplitRatio, setEditorSplitRatio] = useState(50); // percentage for editor width
+  const [isResizingEditor, setIsResizingEditor] = useState(false);
+  const editorWrapperRef = useRef<HTMLDivElement>(null);
 
   const notesDirRef = useRef(notesDir);
   const notebooksRef = useRef(notebooks);
@@ -500,6 +503,9 @@ function App() {
               setSettings(appSettings);
               setSidebarWidth(appSettings.sidebar_width);
               setNotesWidth(appSettings.notes_width);
+              if (appSettings.editor_split_ratio) {
+                setEditorSplitRatio(appSettings.editor_split_ratio);
+              }
               setFavorites(appSettings.favorites);
               
               const tags = await invoke<string[]>('get_all_tags', { basePath: dir });
@@ -628,6 +634,12 @@ function App() {
         const newWidth = Math.max(150, Math.min(400, e.clientX - sidebarWidth));
         setNotesWidth(newWidth);
       }
+      if (isResizingEditor && editorWrapperRef.current) {
+        const rect = editorWrapperRef.current.getBoundingClientRect();
+        const relativeX = e.clientX - rect.left;
+        const percentage = Math.max(20, Math.min(80, (relativeX / rect.width) * 100));
+        setEditorSplitRatio(percentage);
+      }
     };
     
     const handleMouseUp = () => {
@@ -639,9 +651,16 @@ function App() {
           invoke('save_settings', { basePath: notesDir, settings: newSettings });
         }
       }
+      if (isResizingEditor) {
+        setIsResizingEditor(false);
+        if (settings && notesDir) {
+          const newSettings = { ...settings, editor_split_ratio: editorSplitRatio };
+          invoke('save_settings', { basePath: notesDir, settings: newSettings });
+        }
+      }
     };
     
-    if (isResizingSidebar || isResizingNotes) {
+    if (isResizingSidebar || isResizingNotes || isResizingEditor) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     }
@@ -650,7 +669,7 @@ function App() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizingSidebar, isResizingNotes, sidebarWidth, notesWidth, settings, notesDir]);
+  }, [isResizingSidebar, isResizingNotes, isResizingEditor, sidebarWidth, notesWidth, editorSplitRatio, settings, notesDir]);
 
   const initApp = async () => {
     setIsChangingDirectory(true);
@@ -2425,7 +2444,7 @@ function App() {
               )}
             </div>
             
-            <div className="editor-wrapper">
+            <div className="editor-wrapper" ref={editorWrapperRef} style={{ '--editor-split-ratio': `${editorSplitRatio}%` } as React.CSSProperties}>
               {isPdfFile(selectedNote.id, selectedNote.content) ? (
                 <div className="pdf-preview-container">
                   <iframe 
@@ -2457,18 +2476,19 @@ function App() {
                   <div ref={officeContainerRef} style={{ display: officeLoading ? 'none' : 'block' }} />
                 </div>
               ) : (
-                <MDEditor 
-                  value={content} 
-                  onChange={handleContentChange}
-                  height="100%" 
-                  visibleDragbar={false}
-                  preview={isEditableFile(selectedNote.id) ? "live" : "preview"}
-                  hideToolbar={!isEditableFile(selectedNote.id)} 
-                  previewOptions={{}}
-                  commands={[
-                    commands.bold,
-                    commands.italic,
-                    commands.strikethrough,
+                <>
+                  <MDEditor 
+                    value={content} 
+                    onChange={handleContentChange}
+                    height="100%" 
+                    visibleDragbar={false}
+                    preview={isEditableFile(selectedNote.id) ? "live" : "preview"}
+                    hideToolbar={!isEditableFile(selectedNote.id)} 
+                    previewOptions={{}}
+                    commands={[
+                      commands.bold,
+                      commands.italic,
+                      commands.strikethrough,
                     commands.hr,
                     commands.divider,
                     commands.link,
@@ -2483,6 +2503,14 @@ function App() {
                     commands.quote,
                   ]}
                 />
+                  <div 
+                    className="editor-split-handle"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setIsResizingEditor(true);
+                    }}
+                  />
+                </>
               )}
             </div>
             

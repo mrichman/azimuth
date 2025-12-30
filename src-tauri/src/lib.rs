@@ -59,6 +59,8 @@ pub struct AppSettings {
     pub ui_font_size: u32,
     pub sidebar_width: u32,
     pub notes_width: u32,
+    #[serde(default = "default_editor_split_ratio")]
+    pub editor_split_ratio: Option<f64>,
     pub favorites: Vec<String>,
     pub tags: HashMap<String, Vec<String>>,
     #[serde(default)]
@@ -77,6 +79,10 @@ fn default_ui_font_size() -> u32 {
     13
 }
 
+fn default_editor_split_ratio() -> Option<f64> {
+    Some(50.0)
+}
+
 fn default_auto_save() -> bool {
     true
 }
@@ -90,6 +96,7 @@ impl Default for AppSettings {
             ui_font_size: 13,
             sidebar_width: 200,
             notes_width: 200,
+            editor_split_ratio: Some(50.0),
             favorites: Vec::new(),
             tags: HashMap::new(),
             notebook_styles: HashMap::new(),

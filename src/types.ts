@@ -28,6 +28,7 @@ export interface AppSettings {
   ui_font_size: number;
   sidebar_width: number;
   notes_width: number;
+  editor_split_ratio?: number;
   favorites: string[];
   tags: Record<string, string[]>;
   notebook_styles: Record<string, NotebookStyle>;
