@@ -628,6 +628,26 @@ fn rename_note(notebook_path: String, old_id: String, new_id: String) -> Result<
 }
 
 #[tauri::command]
+fn move_note(source_folder: String, target_folder: String, note_id: String) -> Result<(), String> {
+    let source_path = PathBuf::from(&source_folder).join(&note_id);
+    let target_path = PathBuf::from(&target_folder).join(&note_id);
+    
+    if !source_path.exists() {
+        return Err(format!("File does not exist: {}", note_id));
+    }
+    
+    if target_path.exists() {
+        return Err(format!("A file with that name already exists in the target folder: {}", note_id));
+    }
+    
+    // Ensure target folder exists
+    fs::create_dir_all(&target_folder).map_err(|e| e.to_string())?;
+    
+    fs::rename(&source_path, &target_path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn read_note(notebook_path: String, note_id: String) -> Result<String, String> {
     let path = PathBuf::from(&notebook_path).join(&note_id);
     fs::read_to_string(&path).map_err(|e| e.to_string())
@@ -1260,6 +1280,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
             use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem};
             
@@ -1347,6 +1368,7 @@ pub fn run() {
             save_note,
             delete_note,
             rename_note,
+            move_note,
             read_note,
             read_file_binary,
             save_attachment,

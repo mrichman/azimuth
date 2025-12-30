@@ -4,7 +4,6 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { watch } from '@tauri-apps/plugin-fs';
 import MDEditor, { commands } from '@uiw/react-md-editor';
-import { v4 as uuidv4 } from 'uuid';
 import { renderAsync } from 'docx-preview';
 import * as XLSX from 'xlsx';
 import { Note, Notebook, SyncConfig, AppSettings, SearchResult, SyncStatus, OpenTab, NotebookStyle } from './types';
@@ -49,6 +48,8 @@ function App() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
   
   // Local state for settings inputs (to prevent modal dismissal on typing)
   const [localEditorFont, setLocalEditorFont] = useState('');
@@ -56,6 +57,7 @@ function App() {
   
   // Drag and drop state for notebooks
   const [draggedNotebook, setDraggedNotebook] = useState<Notebook | null>(null);
+  const [draggedNote, setDraggedNote] = useState<Note | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [loadingFolders, setLoadingFolders] = useState<Set<string>>(new Set());
   const [isChangingDirectory, setIsChangingDirectory] = useState(true); // Start true for initial load
@@ -596,11 +598,24 @@ function App() {
         e.preventDefault();
         setShowSearch(true);
       }
+      // Cmd+P for command palette
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+        e.preventDefault();
+        setShowCommandPalette(true);
+        setCommandQuery('');
+      }
+      // Escape to close modals
+      if (e.key === 'Escape') {
+        if (showCommandPalette) {
+          setShowCommandPalette(false);
+          setCommandQuery('');
+        }
+      }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNote, selectedNotebook, content]);
+  }, [selectedNote, selectedNotebook, content, showCommandPalette]);
 
   // Resizable panel handlers
   useEffect(() => {
@@ -971,6 +986,40 @@ function App() {
     }
   };
 
+  // Move note to another folder
+  const moveNote = async (note: Note, targetNotebook: Notebook | null) => {
+    const targetPath = targetNotebook ? targetNotebook.path : notesDir;
+    
+    // Don't move if already in the same folder
+    if (note.folder === targetPath) return;
+    
+    try {
+      await invoke('move_note', { 
+        sourceFolder: note.folder, 
+        targetFolder: targetPath,
+        noteId: note.id
+      });
+      
+      // Remove from current notes list
+      setNotes(prev => prev.filter(n => n.id !== note.id));
+      
+      // Close tab if open
+      const tab = openTabs.find(t => t.note.id === note.id && t.note.folder === note.folder);
+      if (tab) {
+        closeTab(note.id);
+      }
+      
+      // If we moved to the currently selected notebook, refresh its notes
+      if (selectedNotebook?.path === targetPath) {
+        const notesList = await invoke<Note[]>('list_notes', { notebookPath: targetPath });
+        setNotes(notesList);
+      }
+    } catch (e) {
+      console.error('Failed to move note:', e);
+      alert(`Failed to move note: ${e}`);
+    }
+  };
+
   const renderNotebookItem = (notebook: Notebook, depth = 0): React.ReactNode => {
     const hasChildren = isExpandable(notebook);
     const isExpanded = expandedFolders.has(notebook.id);
@@ -1004,13 +1053,13 @@ function App() {
           onDragOver={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (draggedNotebook && draggedNotebook.id !== notebook.id) {
+            if ((draggedNotebook && draggedNotebook.id !== notebook.id) || draggedNote) {
               setDropTarget(notebook.id);
             }
           }}
           onDragEnter={(e) => {
             e.preventDefault();
-            if (draggedNotebook && draggedNotebook.id !== notebook.id) {
+            if ((draggedNotebook && draggedNotebook.id !== notebook.id) || draggedNote) {
               setDropTarget(notebook.id);
             }
           }}
@@ -1026,7 +1075,11 @@ function App() {
             if (draggedNotebook && draggedNotebook.id !== notebook.id) {
               moveNotebook(draggedNotebook, notebook);
             }
+            if (draggedNote) {
+              moveNote(draggedNote, notebook);
+            }
             setDraggedNotebook(null);
+            setDraggedNote(null);
             setDropTarget(null);
           }}
         >
@@ -1472,6 +1525,119 @@ function App() {
     </div>
   );
 
+  // Command palette
+  interface PaletteCommand {
+    id: string;
+    label: string;
+    shortcut?: string;
+    icon: string;
+    action: () => void;
+    category: string;
+  }
+
+  const paletteCommands: PaletteCommand[] = [
+    // File commands
+    { id: 'new-note', label: 'New Note', shortcut: '', icon: '📝', category: 'File', action: () => { setShowCommandPalette(false); setShowNewNote(true); } },
+    { id: 'new-notebook', label: 'New Notebook', shortcut: '', icon: '📁', category: 'File', action: () => { setShowCommandPalette(false); setShowNewNotebook(true); } },
+    { id: 'save', label: 'Save Note', shortcut: '⌘S', icon: '💾', category: 'File', action: () => { setShowCommandPalette(false); if (selectedNote && isEditableFile(selectedNote.id)) saveNote(); } },
+    { id: 'import-folder', label: 'Import Folder as Notebook', shortcut: '', icon: '📂', category: 'File', action: () => { setShowCommandPalette(false); importFolder(); } },
+    
+    // Navigation commands
+    { id: 'search', label: 'Search Notes', shortcut: '⌘K', icon: '🔍', category: 'Navigation', action: () => { setShowCommandPalette(false); setShowSearch(true); } },
+    { id: 'go-to-favorites', label: 'Go to Favorites', shortcut: '', icon: '⭐', category: 'Navigation', action: () => { setShowCommandPalette(false); setSelectedNotebook(null); setFilterTag(null); } },
+    
+    // Edit commands
+    { id: 'toggle-favorite', label: isFavorite ? 'Remove from Favorites' : 'Add to Favorites', shortcut: '', icon: isFavorite ? '★' : '☆', category: 'Edit', action: () => { setShowCommandPalette(false); toggleFavorite(); } },
+    { id: 'add-tag', label: 'Add Tag to Note', shortcut: '', icon: '🏷️', category: 'Edit', action: () => { setShowCommandPalette(false); setShowTagInput(true); } },
+    { id: 'delete-note', label: 'Delete Note', shortcut: '', icon: '🗑️', category: 'Edit', action: () => { setShowCommandPalette(false); deleteNote(); } },
+    
+    // View commands
+    { id: 'sort-name', label: 'Sort by Name', shortcut: '', icon: '🔤', category: 'View', action: () => { setShowCommandPalette(false); setSortBy('name'); } },
+    { id: 'sort-updated', label: 'Sort by Modified Date', shortcut: '', icon: '📅', category: 'View', action: () => { setShowCommandPalette(false); setSortBy('updated'); } },
+    { id: 'sort-created', label: 'Sort by Created Date', shortcut: '', icon: '📆', category: 'View', action: () => { setShowCommandPalette(false); setSortBy('created'); } },
+    { id: 'toggle-sort-order', label: sortOrder === 'asc' ? 'Sort Descending' : 'Sort Ascending', shortcut: '', icon: sortOrder === 'asc' ? '↓' : '↑', category: 'View', action: () => { setShowCommandPalette(false); toggleSortOrder(); } },
+    
+    // Sync commands
+    ...(syncConfig ? [{ id: 'sync', label: 'Sync Now', shortcut: '', icon: '☁️', category: 'Sync', action: () => { setShowCommandPalette(false); performSync(); } }] : []),
+    
+    // Settings commands
+    { id: 'settings', label: 'Open Settings', shortcut: '⌘,', icon: '⚙️', category: 'Settings', action: () => { setShowCommandPalette(false); setShowSettings(true); } },
+    { id: 'help', label: 'Open Help', shortcut: '⌘?', icon: '❓', category: 'Settings', action: () => { setShowCommandPalette(false); setShowHelp(true); } },
+    { id: 'toggle-autosave', label: settings?.auto_save ? 'Disable Auto-Save' : 'Enable Auto-Save', shortcut: '', icon: settings?.auto_save ? '🔴' : '🟢', category: 'Settings', action: async () => { 
+      setShowCommandPalette(false); 
+      if (settings && notesDir) {
+        const newSettings = { ...settings, auto_save: !settings.auto_save };
+        setSettings(newSettings);
+        await invoke('save_settings', { basePath: notesDir, settings: newSettings });
+      }
+    } },
+  ];
+
+  const filteredCommands = paletteCommands.filter(cmd => {
+    if (!commandQuery) return true;
+    const query = commandQuery.toLowerCase();
+    return cmd.label.toLowerCase().includes(query) || 
+           cmd.category.toLowerCase().includes(query);
+  });
+
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+
+  // Reset selection when query changes
+  useEffect(() => {
+    setSelectedCommandIndex(0);
+  }, [commandQuery]);
+
+  const handleCommandKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedCommandIndex(prev => Math.min(prev + 1, filteredCommands.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedCommandIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filteredCommands[selectedCommandIndex]) {
+        filteredCommands[selectedCommandIndex].action();
+      }
+    } else if (e.key === 'Escape') {
+      setShowCommandPalette(false);
+      setCommandQuery('');
+    }
+  };
+
+  const CommandPalette = () => (
+    <div className="modal-overlay" onClick={() => { setShowCommandPalette(false); setCommandQuery(''); }}>
+      <div className="modal command-palette" onClick={e => e.stopPropagation()}>
+        <input
+          autoFocus
+          type="text"
+          placeholder="Type a command..."
+          value={commandQuery}
+          onChange={e => setCommandQuery(e.target.value)}
+          onKeyDown={handleCommandKeyDown}
+          className="command-input"
+        />
+        <div className="command-list">
+          {filteredCommands.map((cmd, i) => (
+            <div 
+              key={cmd.id} 
+              className={`command-item ${i === selectedCommandIndex ? 'selected' : ''}`}
+              onClick={() => cmd.action()}
+            >
+              <span className="command-icon">{cmd.icon}</span>
+              <span className="command-label">{cmd.label}</span>
+              <span className="command-category">{cmd.category}</span>
+              {cmd.shortcut && <span className="command-shortcut">{cmd.shortcut}</span>}
+            </div>
+          ))}
+          {filteredCommands.length === 0 && (
+            <div className="command-empty">No commands found</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   const NotebookCustomizeModal = () => {
     if (!customizingNotebook) return null;
     const currentStyle = getNotebookStyle(customizingNotebook.path);
@@ -1817,6 +1983,7 @@ function App() {
               <tbody>
                 <tr><td><kbd>⌘S</kbd></td><td>Save note</td></tr>
                 <tr><td><kbd>⌘K</kbd></td><td>Search all notes</td></tr>
+                <tr><td><kbd>⌘P</kbd></td><td>Command palette</td></tr>
                 <tr><td><kbd>⌘,</kbd></td><td>Open Settings</td></tr>
                 <tr><td><kbd>⌘?</kbd></td><td>Open Help</td></tr>
               </tbody>
@@ -2028,13 +2195,13 @@ function App() {
           onDragOver={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (draggedNotebook) {
+            if (draggedNotebook || draggedNote) {
               setDropTarget('root');
             }
           }}
           onDragEnter={(e) => {
             e.preventDefault();
-            if (draggedNotebook) {
+            if (draggedNotebook || draggedNote) {
               setDropTarget('root');
             }
           }}
@@ -2050,7 +2217,11 @@ function App() {
             if (draggedNotebook) {
               moveNotebook(draggedNotebook, null);
             }
+            if (draggedNote) {
+              moveNote(draggedNote, null);
+            }
             setDraggedNotebook(null);
+            setDraggedNote(null);
             setDropTarget(null);
           }}
         >
@@ -2173,11 +2344,21 @@ function App() {
                 ) : (
                   <li 
                     key={note.id} 
-                    className={selectedNote?.id === note.id ? 'selected' : ''}
+                    className={`${selectedNote?.id === note.id ? 'selected' : ''} ${draggedNote?.id === note.id ? 'dragging' : ''}`}
                     onClick={() => openNoteInTab(note)}
                     onContextMenu={e => {
                       e.preventDefault();
                       setContextMenu({ x: e.clientX, y: e.clientY, note, inFavorites: false });
+                    }}
+                    draggable={true}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', note.id);
+                      setDraggedNote(note);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedNote(null);
+                      setDropTarget(null);
                     }}
                   >
                     {favorites.includes(`${note.folder}/${note.id}`) && '⭐ '}
@@ -2328,6 +2509,7 @@ function App() {
       </main>
       
       {showSearch && <SearchModal />}
+      {showCommandPalette && <CommandPalette />}
       {settingsModalContent}
       {showHelp && <HelpModal />}
       {customizingNotebook && <NotebookCustomizeModal />}

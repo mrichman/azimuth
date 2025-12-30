@@ -58,6 +58,7 @@ just build
 |----------|--------|
 | Cmd+S | Save note |
 | Cmd+K | Search all notes |
+| Cmd+P | Command palette |
 
 ## Shortcut Commands
 

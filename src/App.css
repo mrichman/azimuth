@@ -322,7 +322,8 @@ body {
   outline: none;
 }
 
-.notebooks li.dragging {
+.notebooks li.dragging,
+.notes-list li.dragging {
   opacity: 0.4 !important;
   background: var(--border);
 }
@@ -1426,4 +1427,86 @@ body {
   min-height: 0;
   max-height: none;
   border: none;
+}
+
+/* Command Palette */
+.command-palette {
+  width: 500px;
+  max-width: 90vw;
+  padding: 0;
+  overflow: hidden;
+}
+
+.command-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 1.08em;
+  outline: none;
+}
+
+.command-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.command-list {
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.command-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: default;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.command-item:last-child {
+  border-bottom: none;
+}
+
+.command-item:hover,
+.command-item.selected {
+  background: var(--bg-tertiary);
+}
+
+.command-icon {
+  font-size: 1em;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.command-label {
+  flex: 1;
+  font-size: 0.92em;
+}
+
+.command-category {
+  font-size: 0.77em;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.command-shortcut {
+  font-size: 0.77em;
+  color: var(--text-secondary);
+  font-family: var(--ui-font-family);
+  padding: 2px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.command-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
 }

@@ -28,6 +28,7 @@
     "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-write-image",
-    "http:default"
+    "http:default",
+    "window-state:default"
   ]
 }
