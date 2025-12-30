@@ -27,10 +27,14 @@ iframe {
   --success: #a6e3a1;
   --danger: #f38ba8;
   --warning: #f9e2af;
+  --ui-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ui-font-size: 13px;
+  --editor-font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  --editor-font-size: 14px;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--ui-font-family, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
   background: var(--bg-primary);
   color: var(--text-primary);
 }
@@ -39,6 +43,8 @@ body {
   display: flex;
   height: 100%;
   overflow: hidden;
+  font-family: var(--ui-font-family, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  font-size: var(--ui-font-size, 13px);
 }
 
 .sidebar, .notes-sidebar {
@@ -75,7 +81,7 @@ body {
 }
 
 .sidebar-header h1 {
-  font-size: 14px;
+  font-size: 1.08em;
   font-weight: 600;
 }
 
@@ -123,7 +129,7 @@ body {
 }
 
 .toggle-label {
-  font-size: 11px;
+  font-size: 0.85em;
   color: var(--text-secondary);
 }
 
@@ -139,7 +145,7 @@ body {
 .sidebar-header button, .header-buttons button {
   background: none;
   border: none;
-  font-size: 12px;
+  font-size: 0.92em;
   cursor: default;
   padding: 2px 6px;
   border-radius: 4px;
@@ -154,7 +160,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  font-size: 10px;
+  font-size: 0.77em;
   text-transform: uppercase;
   color: var(--text-secondary);
   font-weight: 600;
@@ -169,7 +175,7 @@ body {
   height: 18px;
   border-radius: 3px;
   cursor: default;
-  font-size: 12px;
+  font-size: 0.92em;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -191,7 +197,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 0.85em;
 }
 
 .favorites-section {
@@ -206,7 +212,7 @@ body {
 
 .favorites-section li {
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: 0.85em;
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
@@ -244,7 +250,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-primary);
-  font-size: 10px;
+  font-size: 0.77em;
   cursor: default;
 }
 
@@ -254,7 +260,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 0.92em;
   cursor: default;
   min-width: 28px;
 }
@@ -275,7 +281,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 0.85em;
   user-select: none;
   -webkit-user-drag: element;
 }
@@ -312,7 +318,7 @@ body {
   border: 1px solid var(--accent);
   border-radius: 4px;
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 0.85em;
   outline: none;
 }
 
@@ -334,7 +340,7 @@ body {
 }
 
 .folder-toggle {
-  font-size: 8px;
+  font-size: 0.62em;
   width: 12px;
   cursor: default;
   opacity: 0.7;
@@ -387,7 +393,7 @@ body {
   border-radius: 4px;
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 0.85em;
 }
 
 .new-notebook button {
@@ -397,7 +403,7 @@ body {
   border: none;
   border-radius: 4px;
   cursor: default;
-  font-size: 11px;
+  font-size: 0.85em;
 }
 
 .editor-area {
@@ -448,7 +454,7 @@ body {
 
 .tab-title {
   flex: 1;
-  font-size: 12px;
+  font-size: 0.92em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -460,7 +466,7 @@ body {
 
 .dirty-indicator {
   color: var(--warning);
-  font-size: 10px;
+  font-size: 0.77em;
 }
 
 .tab-close {
@@ -468,7 +474,7 @@ body {
   border: none;
   color: var(--text-secondary);
   cursor: default;
-  font-size: 14px;
+  font-size: 1.08em;
   padding: 0 2px;
   line-height: 1;
   border-radius: 3px;
@@ -487,7 +493,7 @@ body {
   padding: 6px 12px;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 0.85em;
   color: var(--text-secondary);
   flex-shrink: 0;
   min-height: 28px;
@@ -593,7 +599,7 @@ body {
   border: none;
   border-radius: 4px;
   cursor: default;
-  font-size: 12px;
+  font-size: 0.92em;
   transition: all 0.15s ease;
   background: var(--bg-tertiary);
   color: var(--text-primary);
@@ -618,12 +624,12 @@ body {
 }
 
 .sync-status {
-  font-size: 11px;
+  font-size: 0.85em;
   color: var(--text-secondary);
 }
 
 .save-indicator {
-  font-size: 12px;
+  font-size: 0.92em;
   color: var(--success);
   animation: fadeIn 0.2s ease;
 }
@@ -649,7 +655,7 @@ body {
   color: var(--bg-tertiary);
   padding: 2px 8px;
   border-radius: 12px;
-  font-size: 11px;
+  font-size: 0.85em;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -660,7 +666,7 @@ body {
   border: none;
   color: var(--bg-tertiary);
   cursor: default;
-  font-size: 12px;
+  font-size: 0.92em;
   padding: 0;
   line-height: 1;
 }
@@ -671,7 +677,7 @@ body {
   border-radius: 12px;
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 0.85em;
   width: 100px;
 }
 
@@ -681,7 +687,7 @@ body {
   color: var(--text-secondary);
   padding: 2px 8px;
   border-radius: 12px;
-  font-size: 11px;
+  font-size: 0.85em;
   cursor: default;
 }
 
@@ -705,7 +711,7 @@ body {
 
 .empty-state .hint {
   margin-top: 16px;
-  font-size: 12px;
+  font-size: 0.92em;
   opacity: 0.7;
 }
 
@@ -797,7 +803,7 @@ body {
   border: none;
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 1.23em;
   outline: none;
 }
 
@@ -822,13 +828,13 @@ body {
 }
 
 .search-result-path {
-  font-size: 11px;
+  font-size: 0.85em;
   color: var(--text-secondary);
   margin-bottom: 4px;
 }
 
 .search-result-snippet {
-  font-size: 12px;
+  font-size: 0.92em;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -848,7 +854,7 @@ body {
 .settings-section label {
   display: block;
   margin-bottom: 8px;
-  font-size: 12px;
+  font-size: 0.92em;
   color: var(--text-secondary);
 }
 
@@ -857,7 +863,8 @@ body {
   margin-right: 8px;
 }
 
-.settings-section select {
+.settings-section select,
+.settings-section input[type="text"] {
   width: 100%;
   padding: 8px;
   background: var(--bg-tertiary);
@@ -878,7 +885,7 @@ body {
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 0.92em;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -963,7 +970,7 @@ body {
 
 .sync-config h3 {
   margin-bottom: 12px;
-  font-size: 14px;
+  font-size: 1.08em;
 }
 
 .sync-config input {
@@ -989,7 +996,7 @@ body {
 
 .last-sync {
   margin-top: 12px;
-  font-size: 11px;
+  font-size: 0.85em;
   color: var(--text-secondary);
 }
 
@@ -1024,20 +1031,20 @@ body {
 }
 
 .help-content h3 {
-  font-size: 14px;
+  font-size: 1.08em;
   margin-bottom: 8px;
   color: var(--accent);
 }
 
 .help-content p {
-  font-size: 13px;
+  font-size: 1em;
   line-height: 1.5;
   margin-bottom: 8px;
   color: var(--text-secondary);
 }
 
 .help-content ul {
-  font-size: 13px;
+  font-size: 1em;
   line-height: 1.6;
   color: var(--text-secondary);
   padding-left: 20px;
@@ -1053,7 +1060,7 @@ body {
   padding: 2px 6px;
   border-radius: 4px;
   font-family: monospace;
-  font-size: 12px;
+  font-size: 0.92em;
   color: var(--accent);
 }
 
@@ -1063,14 +1070,14 @@ body {
   border-radius: 4px;
   padding: 2px 6px;
   font-family: system-ui;
-  font-size: 12px;
+  font-size: 0.92em;
   box-shadow: 0 1px 0 var(--border);
 }
 
 .help-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 1em;
 }
 
 .help-table td {
@@ -1120,7 +1127,7 @@ body {
   background: none;
   border: none;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 0.92em;
   text-align: left;
   cursor: default;
   border-radius: 4px;
@@ -1137,7 +1144,7 @@ body {
 .customize-section label {
   display: block;
   margin-bottom: 8px;
-  font-size: 12px;
+  font-size: 0.92em;
   color: var(--text-secondary);
 }
 
@@ -1157,7 +1164,7 @@ body {
   border: 2px solid transparent;
   border-radius: 6px;
   cursor: default;
-  font-size: 16px;
+  font-size: 1.23em;
   transition: all 0.15s;
 }
 
@@ -1199,7 +1206,7 @@ body {
   background: var(--bg-tertiary);
   border-radius: 6px;
   margin-bottom: 16px;
-  font-size: 13px;
+  font-size: 1em;
 }
 
 /* MD Editor overrides */
@@ -1231,6 +1238,7 @@ body {
 .wmde-markdown {
   background: var(--bg-primary) !important;
   color: var(--text-primary) !important;
+  font-family: var(--ui-font-family, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif) !important;
   overflow: auto !important;
 }
 
@@ -1297,7 +1305,7 @@ body {
   padding: 40px;
   text-align: center;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 1.08em;
 }
 
 .office-error {
@@ -1321,7 +1329,7 @@ body {
   border: 1px solid #ccc;
   border-bottom: none;
   border-radius: 4px 4px 0 0;
-  font-size: 12px;
+  font-size: 0.92em;
   color: #333;
   white-space: nowrap;
 }
@@ -1335,7 +1343,7 @@ body {
 /* Excel table styling */
 .office-preview-container table {
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 1em;
   min-width: 100%;
 }
 
@@ -1370,7 +1378,7 @@ body {
   background: #f5f5f5;
   border-bottom: 1px solid #ddd;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 0.92em;
   color: #666;
 }
 
@@ -1397,7 +1405,7 @@ body {
   padding: 40px;
   text-align: center;
   color: var(--danger);
-  font-size: 14px;
+  font-size: 1.08em;
 }
 
 

@@ -52,7 +52,11 @@ pub struct NotebookStyle {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
     pub font_family: String,
+    #[serde(default = "default_ui_font_family")]
+    pub ui_font_family: String,
     pub font_size: u32,
+    #[serde(default = "default_ui_font_size")]
+    pub ui_font_size: u32,
     pub sidebar_width: u32,
     pub notes_width: u32,
     pub favorites: Vec<String>,
@@ -65,6 +69,14 @@ pub struct AppSettings {
     pub auto_save: bool,
 }
 
+fn default_ui_font_family() -> String {
+    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif".to_string()
+}
+
+fn default_ui_font_size() -> u32 {
+    13
+}
+
 fn default_auto_save() -> bool {
     true
 }
@@ -73,7 +85,9 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             font_family: "'SF Mono', 'Fira Code', 'Consolas', monospace".to_string(),
+            ui_font_family: default_ui_font_family(),
             font_size: 14,
+            ui_font_size: 13,
             sidebar_width: 200,
             notes_width: 200,
             favorites: Vec::new(),

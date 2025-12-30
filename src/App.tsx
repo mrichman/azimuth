@@ -47,6 +47,10 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   
+  // Local state for settings inputs (to prevent modal dismissal on typing)
+  const [localEditorFont, setLocalEditorFont] = useState('');
+  const [localUiFont, setLocalUiFont] = useState('');
+  
   // Drag and drop state for notebooks
   const [draggedNotebook, setDraggedNotebook] = useState<Notebook | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -83,6 +87,7 @@ function App() {
   const notesDirRef = useRef(notesDir);
   const notebooksRef = useRef(notebooks);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fontSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const selectedNoteRef = useRef(selectedNote);
   const selectedNotebookRef = useRef(selectedNotebook);
@@ -94,6 +99,14 @@ function App() {
   useEffect(() => { selectedNotebookRef.current = selectedNotebook; }, [selectedNotebook]);
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
+  
+  // Initialize local font state when settings modal opens
+  useEffect(() => {
+    if (showSettings && settings) {
+      setLocalEditorFont(settings.font_family || "'SF Mono', 'Fira Code', 'Consolas', monospace");
+      setLocalUiFont(settings.ui_font_family || "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif");
+    }
+  }, [showSettings, settings]);
   
   // Update window title with root directory
   useEffect(() => {
@@ -814,11 +827,57 @@ function App() {
     await invoke('save_settings', { basePath: notesDir, settings: newSettings });
   };
 
-  const updateFontFamily = async (family: string) => {
+  const updateUiFontSize = async (size: number) => {
     if (!settings || !notesDir) return;
-    const newSettings = { ...settings, font_family: family };
+    const newSettings = { ...settings, ui_font_size: size };
     setSettings(newSettings);
+    
+    // Apply immediately to body
+    document.body.style.fontSize = `${size}px`;
+    document.documentElement.style.setProperty('--ui-font-size', `${size}px`);
+    
     await invoke('save_settings', { basePath: notesDir, settings: newSettings });
+  };
+
+  const updateFontFamily = (family: string) => {
+    const currentSettings = settingsRef.current;
+    if (!currentSettings || !notesDir) return;
+    
+    // Update ref directly without triggering re-render
+    settingsRef.current = { ...currentSettings, font_family: family };
+    
+    // Apply immediately
+    document.documentElement.style.setProperty('--editor-font-family', family);
+    
+    if (fontSaveTimerRef.current) clearTimeout(fontSaveTimerRef.current);
+    fontSaveTimerRef.current = setTimeout(() => {
+      invoke('save_settings', { basePath: notesDir, settings: settingsRef.current! });
+      // Sync state after save
+      setSettings(settingsRef.current);
+    }, 500);
+  };
+
+  const updateUiFontFamily = (family: string) => {
+    const currentSettings = settingsRef.current;
+    if (!currentSettings || !notesDir) return;
+    
+    console.log('updateUiFontFamily called with:', JSON.stringify(family));
+    
+    // Update ref directly without triggering re-render
+    settingsRef.current = { ...currentSettings, ui_font_family: family };
+    
+    // Apply immediately to body using setProperty which handles quotes better
+    document.body.style.setProperty('font-family', family);
+    document.documentElement.style.setProperty('--ui-font-family', family);
+    
+    console.log('Body font-family is now:', getComputedStyle(document.body).fontFamily);
+    
+    if (fontSaveTimerRef.current) clearTimeout(fontSaveTimerRef.current);
+    fontSaveTimerRef.current = setTimeout(() => {
+      invoke('save_settings', { basePath: notesDir, settings: settingsRef.current! });
+      // Sync state after save
+      setSettings(settingsRef.current);
+    }, 500);
   };
 
   // Helper to check if notebook has real children loaded (not just placeholder)
@@ -1616,9 +1675,9 @@ function App() {
     }
   };
 
-  const SettingsModal = () => (
-    <div className="modal-overlay" onClick={() => setShowSettings(false)}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+  const settingsModalContent = showSettings ? (
+    <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowSettings(false); }}>
+      <div className="modal" onMouseDown={e => e.stopPropagation()}>
         <h2>Settings</h2>
         
         <div className="settings-section">
@@ -1641,20 +1700,37 @@ function App() {
           <span>{settings?.font_size || 14}px</span>
         </div>
         <div className="settings-section">
-          <label>Font Family</label>
-          <select
-            value={settings?.font_family || "'SF Mono', 'Fira Code', 'Consolas', monospace"}
-            onChange={e => updateFontFamily(e.target.value)}
-          >
-            <option value="'SF Mono', 'Fira Code', 'Consolas', monospace">Monospace (Default)</option>
-            <option value="'SF Mono', monospace">SF Mono</option>
-            <option value="'Fira Code', monospace">Fira Code</option>
-            <option value="'JetBrains Mono', monospace">JetBrains Mono</option>
-            <option value="'Cascadia Code', monospace">Cascadia Code</option>
-            <option value="'Source Code Pro', monospace">Source Code Pro</option>
-            <option value="system-ui, sans-serif">System UI</option>
-            <option value="Georgia, serif">Georgia</option>
-          </select>
+          <label>Editor Font Family</label>
+          <input
+            type="text"
+            value={localEditorFont}
+            onChange={e => setLocalEditorFont(e.target.value)}
+            onBlur={e => updateFontFamily(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') updateFontFamily(e.currentTarget.value); }}
+            placeholder="e.g. 'Fira Code', 'JetBrains Mono', monospace"
+          />
+        </div>
+        <div className="settings-section">
+          <label>UI Font Family</label>
+          <input
+            type="text"
+            value={localUiFont}
+            onChange={e => setLocalUiFont(e.target.value)}
+            onBlur={e => updateUiFontFamily(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') updateUiFontFamily(e.currentTarget.value); }}
+            placeholder="e.g. system-ui, 'Inter', sans-serif"
+          />
+        </div>
+        <div className="settings-section">
+          <label>UI Font Size</label>
+          <input
+            type="range"
+            min="10"
+            max="18"
+            value={settings?.ui_font_size || 13}
+            onChange={e => updateUiFontSize(parseInt(e.target.value))}
+          />
+          <span>{settings?.ui_font_size || 13}px</span>
         </div>
         
         {/* Cloud Sync Section */}
@@ -1712,7 +1788,7 @@ function App() {
         <button className="close-btn" onClick={() => setShowSettings(false)}>Close</button>
       </div>
     </div>
-  );
+  ) : null;
 
   const HelpModal = () => (
     <div className="modal-overlay" onClick={() => setShowHelp(false)}>
@@ -1784,10 +1860,20 @@ function App() {
     </div>
   );
 
-  const editorStyle = settings ? {
-    '--editor-font-family': settings.font_family,
-    '--editor-font-size': `${settings.font_size}px`,
-  } as React.CSSProperties : {};
+  // Apply UI font settings to document root
+  useEffect(() => {
+    if (settings) {
+      const uiFont = settings.ui_font_family || "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      const uiFontSize = `${settings.ui_font_size || 13}px`;
+      document.documentElement.style.setProperty('--ui-font-family', uiFont);
+      document.documentElement.style.setProperty('--ui-font-size', uiFontSize);
+      document.documentElement.style.setProperty('--editor-font-family', settings.font_family || "'SF Mono', 'Fira Code', 'Consolas', monospace");
+      document.documentElement.style.setProperty('--editor-font-size', `${settings.font_size || 14}px`);
+      // Also set directly on body to ensure it applies
+      document.body.style.fontFamily = uiFont;
+      document.body.style.fontSize = uiFontSize;
+    }
+  }, [settings]);
 
   return (
     <div className="app">
@@ -2134,7 +2220,7 @@ function App() {
               )}
             </div>
             
-            <div className="editor-wrapper" style={editorStyle}>
+            <div className="editor-wrapper">
               {isPdfFile(selectedNote.id, selectedNote.content) ? (
                 <div className="pdf-preview-container">
                   <iframe 
@@ -2218,7 +2304,7 @@ function App() {
       </main>
       
       {showSearch && <SearchModal />}
-      {showSettings && <SettingsModal />}
+      {settingsModalContent}
       {showHelp && <HelpModal />}
       {customizingNotebook && <NotebookCustomizeModal />}
       {contextMenu && <NotebookContextMenu />}

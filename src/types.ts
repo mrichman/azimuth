@@ -23,7 +23,9 @@ export interface SyncConfig {
 
 export interface AppSettings {
   font_family: string;
+  ui_font_family: string;
   font_size: number;
+  ui_font_size: number;
   sidebar_width: number;
   notes_width: number;
   favorites: string[];
