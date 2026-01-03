@@ -1874,6 +1874,28 @@ function App() {
       setContextMenu(null);
     };
     
+    const handleRevealInFinder = async () => {
+      const path = contextMenu.note 
+        ? `${contextMenu.note.folder}/${contextMenu.note.id}`
+        : contextMenu.notebook?.path || contextMenu.notePath;
+      if (path) {
+        const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+        await revealItemInDir(path);
+      }
+      setContextMenu(null);
+    };
+    
+    const handleCopyPath = async () => {
+      const path = contextMenu.note 
+        ? `${contextMenu.note.folder}/${contextMenu.note.id}`
+        : contextMenu.notebook?.path || contextMenu.notePath;
+      if (path) {
+        const { writeText } = await import('@tauri-apps/plugin-clipboard-manager');
+        await writeText(path);
+      }
+      setContextMenu(null);
+    };
+    
     const handleDeleteNote = async () => {
       const noteToDelete = contextMenu.note;
       const notebookPath = selectedNotebook?.path;
@@ -1927,6 +1949,13 @@ function App() {
             <button onClick={handleDeleteNote}>
               🗑️ Delete
             </button>
+            <div className="context-menu-separator" />
+            <button onClick={handleRevealInFinder}>
+              📂 Reveal in Finder
+            </button>
+            <button onClick={handleCopyPath}>
+              📋 Copy File Path
+            </button>
           </div>
         </div>
       );
@@ -1961,6 +1990,13 @@ function App() {
           </button>
           <button onClick={handleCustomize}>
             🎨 Customize
+          </button>
+          <div className="context-menu-separator" />
+          <button onClick={handleRevealInFinder}>
+            📂 Reveal in Finder
+          </button>
+          <button onClick={handleCopyPath}>
+            📋 Copy Path
           </button>
         </div>
       </div>

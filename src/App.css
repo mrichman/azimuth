@@ -1184,6 +1184,12 @@ body {
   background: var(--border);
 }
 
+.context-menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
 .customize-section {
   margin-bottom: 16px;
 }
