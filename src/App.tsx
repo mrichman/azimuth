@@ -702,6 +702,50 @@ function App() {
           setCommandQuery('');
         }
       }
+      
+      // Cmd+Plus to increase font size
+      if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentSize = settingsRef.current?.font_size || 14;
+        if (currentSize < 24) {
+          const newSize = currentSize + 1;
+          if (settingsRef.current && notesDirRef.current) {
+            const newSettings = { ...settingsRef.current, font_size: newSize };
+            setSettings(newSettings);
+            invoke('save_settings', { basePath: notesDirRef.current, settings: newSettings });
+          }
+        }
+        return;
+      }
+      
+      // Cmd+Minus to decrease font size
+      if ((e.metaKey || e.ctrlKey) && e.key === '-') {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentSize = settingsRef.current?.font_size || 14;
+        if (currentSize > 10) {
+          const newSize = currentSize - 1;
+          if (settingsRef.current && notesDirRef.current) {
+            const newSettings = { ...settingsRef.current, font_size: newSize };
+            setSettings(newSettings);
+            invoke('save_settings', { basePath: notesDirRef.current, settings: newSettings });
+          }
+        }
+        return;
+      }
+      
+      // Cmd+0 to reset font size to default
+      if ((e.metaKey || e.ctrlKey) && e.key === '0') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (settingsRef.current && notesDirRef.current) {
+          const newSettings = { ...settingsRef.current, font_size: 14 };
+          setSettings(newSettings);
+          invoke('save_settings', { basePath: notesDirRef.current, settings: newSettings });
+        }
+        return;
+      }
     };
     
     // Use capture phase to intercept before MDEditor handles shortcuts
