@@ -435,11 +435,13 @@ function App() {
       const note = selectedNoteRef.current;
       const notebook = selectedNotebookRef.current;
       const currentContent = contentRef.current;
+      const notebookPath = notebook?.path || notesDirRef.current;
       
-      if (note && notebook && isEditableFile(note.id)) {
+      if (note && notebookPath && isEditableFile(note.id)) {
         try {
-          await invoke('save_note', { notebookPath: notebook.path, noteId: note.id, content: currentContent });
-          const title = currentContent.split('\n')[0].replace(/^#\s*/, '') || 'Untitled';
+          await invoke('save_note', { notebookPath, noteId: note.id, content: currentContent });
+          // Use filename (with extension) as title
+          const title = note.id || 'Untitled';
           const updatedNote = { ...note, content: currentContent, title, updated_at: new Date().toISOString() };
           setSelectedNote(updatedNote);
           setOpenTabs(prev => prev.map(t => 
@@ -589,39 +591,123 @@ function App() {
     return () => { if (stopWatching) stopWatching(); };
   }, [notesDir, selectedNotebook, selectedNote]);
 
+  // Memoize saveNote to use in keyboard shortcuts
+  const saveNoteCallback = useCallback(async () => {
+    const notebookPath = selectedNotebookRef.current?.path || notesDirRef.current;
+    const note = selectedNoteRef.current;
+    const currentContent = contentRef.current;
+    if (!note || !notebookPath) return;
+    setIsSaving(true);
+    setSaveIndicator('saving');
+    try {
+      await invoke('save_note', { notebookPath, noteId: note.id, content: currentContent });
+      // Use filename (with extension) as title
+      const title = note.id || 'Untitled';
+      const updatedNote = { ...note, content: currentContent, title, updated_at: new Date().toISOString() };
+      setSelectedNote(updatedNote);
+      
+      // Refresh the notes list to pick up any new files (e.g., pasted images)
+      const notesList = await invoke<Note[]>('list_notes', { notebookPath });
+      setNotes(notesList);
+      
+      // Update tab to mark as not dirty
+      setOpenTabs(prev => prev.map(t => 
+        t.note.id === note.id ? { ...t, note: updatedNote, content: currentContent, isDirty: false } : t
+      ));
+      setSaveIndicator('saved');
+      setTimeout(() => setSaveIndicator('idle'), 2000);
+    } catch (e) {
+      console.error('Failed to save note:', e);
+      setSaveIndicator('idle');
+    } finally {
+      setIsSaving(false);
+    }
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      // Handle native-like shortcuts that Tauri menu might not catch when webview has focus
+      if (e.metaKey && e.key.toLowerCase() === 'q') {
+        e.preventDefault();
+        e.stopPropagation();
+        const { exit } = await import('@tauri-apps/plugin-process');
+        await exit(0);
+        return;
+      }
+      if (e.metaKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        e.stopPropagation();
+        await getCurrentWindow().hide();
+        return;
+      }
+      if (e.metaKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        e.stopPropagation();
+        await getCurrentWindow().minimize();
+        return;
+      }
+      if (e.metaKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        e.stopPropagation();
+        await getCurrentWindow().close();
+        return;
+      }
+      if (e.metaKey && e.key === ',') {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowSettings(true);
+        return;
+      }
+      
+      // Cmd+N to create new note
+      if (e.metaKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowNewNote(true);
+        return;
+      }
+      
       // Cmd+S to save
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        if (selectedNote && selectedNotebook && isEditableFile(selectedNote.id)) {
-          saveNote();
+        e.stopPropagation();
+        const note = selectedNoteRef.current;
+        const notebook = selectedNotebookRef.current;
+        if (note && (notebook || notesDirRef.current) && isEditableFile(note.id)) {
+          saveNoteCallback();
         }
+        return;
       }
       // Cmd+K to search
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
+        e.stopPropagation();
         setShowSearch(true);
+        return;
       }
       // Cmd+P for command palette
       if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
         e.preventDefault();
+        e.stopPropagation();
         setShowCommandPalette(true);
         setCommandQuery('');
+        return;
       }
       // Escape to close modals
       if (e.key === 'Escape') {
         if (showCommandPalette) {
+          e.stopPropagation();
           setShowCommandPalette(false);
           setCommandQuery('');
         }
       }
     };
     
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNote, selectedNotebook, content, showCommandPalette]);
+    // Use capture phase to intercept before MDEditor handles shortcuts
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [saveNoteCallback, showCommandPalette]);
 
   // Resizable panel handlers
   useEffect(() => {
@@ -1340,7 +1426,8 @@ function App() {
     setSaveIndicator('saving');
     try {
       await invoke('save_note', { notebookPath, noteId: selectedNote.id, content });
-      const title = content.split('\n')[0].replace(/^#\s*/, '') || 'Untitled';
+      // Use filename (with extension) as title
+      const title = selectedNote.id || 'Untitled';
       const updatedNote = { ...selectedNote, content, title, updated_at: new Date().toISOString() };
       setSelectedNote(updatedNote);
       

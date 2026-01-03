@@ -492,7 +492,6 @@ fn list_notes(notebook_path: String) -> Result<Vec<Note>, String> {
         if file_path.is_file() {
             let metadata = fs::metadata(&file_path).map_err(|e| e.to_string())?;
             let file_name = file_path.file_name().unwrap().to_string_lossy().to_string();
-            let stem = file_path.file_stem().unwrap().to_string_lossy().to_string();
             let extension = file_path.extension()
                 .map(|e| e.to_string_lossy().to_lowercase())
                 .unwrap_or_default();
@@ -521,7 +520,7 @@ fn list_notes(notebook_path: String) -> Result<Vec<Note>, String> {
             
             notes.push(Note {
                 id: file_name.clone(),
-                title: stem,
+                title: file_name.clone(),
                 content,
                 folder: notebook_path.clone(),
                 created_at: format!("{:?}", metadata.created().unwrap_or(std::time::SystemTime::now())),
@@ -1287,6 +1286,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
             use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem};
